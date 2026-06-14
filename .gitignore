@@ -1,0 +1,11 @@
+target/
+!target/deploy/clob-keypair.json
+node_modules/
+.anchor/
+test-ledger/
+.DS_Store
+dist/
+.env
+.env.local
+app/.next/
+.test-build/
