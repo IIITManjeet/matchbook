@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: clob-postgres
+    environment:
+      POSTGRES_USER: clob
+      POSTGRES_PASSWORD: clob
+      POSTGRES_DB: clob
+    ports:
+      - "5433:5432"
+    volumes:
+      - clob-pgdata:/var/lib/postgresql/data
+
+volumes:
+  clob-pgdata:

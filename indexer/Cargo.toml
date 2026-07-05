@@ -1,0 +1,30 @@
+[package]
+name = "clob-indexer"
+version = "0.1.0"
+edition = "2021"
+description = "Off-chain indexer for the CLOB DEX: log ingestion -> Postgres -> REST/WS"
+
+# Standalone: the repo root is an Anchor workspace (programs only, built in
+# WSL). This crate builds natively on Windows, so it opts out.
+[workspace]
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.6", features = ["cors"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "chrono", "migrate", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+borsh = { version = "1", features = ["derive"] }
+bs58 = "0.5"
+base64 = "0.22"
+sha2 = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+futures-util = "0.3"
+dotenvy = "0.15"
