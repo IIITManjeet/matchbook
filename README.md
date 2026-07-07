@@ -10,7 +10,7 @@ later.
 
 ```
 programs/clob/    Anchor program (Rust) — markets, vaults, orderbook
-indexer/          (M3) Rust service: event ingestion, Postgres, websockets
+indexer/          Rust service: event ingestion → Postgres → REST + websockets
 app/              Next.js trading terminal (mock feed for now; real data in M3)
 tests/            Anchor integration tests
 docs/             Architecture and design notes
@@ -39,6 +39,20 @@ cd D:\solana
 npm test              # tsc + mocha, tests/clob.ts
 ```
 
+## Indexer
+
+The M3 indexer (`indexer/`) builds and runs natively on Windows — it
+only talks to the validator over RPC. Rust ≥ 1.85 required.
+
+```powershell
+cd D:\solana\indexer
+docker compose up -d  # Postgres 16 on localhost:5433
+cargo run             # backfill + live tail, API on http://127.0.0.1:8081
+cargo test            # event decoding + book reconstruction unit tests
+```
+
+See [indexer/README.md](indexer/README.md) for the API and design notes.
+
 ## Trading terminal
 
 The `app/` terminal runs on the Windows side (Node 18.17 → Next.js 14):
@@ -65,8 +79,11 @@ websocket is the only integration point.
       to the market, fills flow through an on-chain event queue and the
       permissionless `consume_events` crank settles maker proceeds.
       Stretch (open): replace the sorted-array book with a crit-bit slab.
-- [ ] **M3 — Off-chain stack**: Rust indexer (Helius/RPC websocket →
-      Postgres), REST + websocket API, Next.js trading terminal.
+- [ ] **M3 — Off-chain stack**: ✅ Rust indexer (log subscription →
+      Postgres, restart-safe backfill, live book reconstruction, 1m
+      candles) with REST + websocket API, verified end-to-end against
+      the integration suite. Remaining: swap the terminal's `MockFeed`
+      for the indexer websocket + wallet-adapter transaction signing.
 - [ ] **M4 — Perps**: Pyth oracle integration, margin accounts, funding
       rate, liquidation instruction + liquidator bot.
 
