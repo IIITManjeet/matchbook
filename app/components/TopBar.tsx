@@ -28,9 +28,9 @@ export default function TopBar() {
     <header className="flex h-14 shrink-0 items-center gap-6 border-b border-line bg-panel px-4">
       <div className="flex items-center gap-2">
         <div className="flex h-6 w-6 items-center justify-center rounded bg-accent/15 text-xs font-bold text-accent">
-          C
+          M
         </div>
-        <span className="text-sm font-semibold tracking-wide">CLOB</span>
+        <span className="text-sm font-semibold tracking-wide">MATCHBOOK</span>
         <span className="rounded bg-panel2 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted">
           devnet
         </span>

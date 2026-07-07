@@ -14,8 +14,8 @@ const geistMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "CLOB · SOL/USDC",
-  description: "Solana central limit orderbook trading terminal",
+  title: "Matchbook · SOL/USDC",
+  description: "Matchbook — Solana central limit orderbook trading terminal",
 };
 
 export default function RootLayout({

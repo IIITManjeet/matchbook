@@ -1,8 +1,8 @@
-# Solana CLOB DEX
+# Matchbook
 
-A central limit orderbook exchange on Solana, built as a deep-dive into
-Anchor and on-chain systems design. Spot markets first, perpetual futures
-later.
+A central limit orderbook DEX on Solana — a matching engine and an order
+book in one word. Built as a deep-dive into Anchor and on-chain systems
+design. Spot markets first, perpetual futures later.
 
 **Program ID (devnet/localnet):** `9bezj1VAw4gTMKonswkKioRdsttD4UowXh87Fcw9Wtr2`
 
