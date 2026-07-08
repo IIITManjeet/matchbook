@@ -26,24 +26,26 @@ export default function Terminal() {
   // loading behind the screen either way.
   if (!connected && !guest) return <ConnectScreen />;
 
+  // Three layouts: single-column stack (mobile, page scrolls),
+  // two-column (tablet, page scrolls), full app grid (xl+, no scroll).
   return (
-    <div className="h-screen overflow-x-auto bg-transparent text-ink">
-      <div className="flex h-full min-w-[1180px] flex-col gap-2 p-2">
+    <div className="min-h-screen bg-transparent text-ink xl:h-screen xl:overflow-hidden">
+      <div className="flex min-h-screen flex-col gap-2 p-2 xl:h-full xl:min-h-0">
         <TopBar />
-        <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_300px_300px] grid-rows-[minmax(0,1fr)_280px] gap-2">
-          <section className={card}>
+        <main className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:min-h-0 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_300px_300px] xl:grid-rows-[minmax(0,1fr)_280px]">
+          <section className={`${card} h-[340px] sm:h-[420px] md:col-span-2 xl:col-span-1 xl:h-auto`}>
             <PriceChart />
           </section>
-          <section className={card}>
+          <section className={`${card} h-[460px] md:h-[540px] xl:h-auto`}>
             <OrderBook />
           </section>
-          <section className={`${card} row-span-2`}>
+          <section className={`${card} md:h-[540px] xl:row-span-2 xl:h-auto`}>
             <OrderForm />
           </section>
-          <section className={card}>
+          <section className={`${card} h-[320px] md:col-span-2 xl:col-span-1 xl:h-auto`}>
             <BottomPanel />
           </section>
-          <section className={card}>
+          <section className={`${card} h-[320px] md:col-span-2 xl:col-span-1 xl:h-auto`}>
             <TradesFeed />
           </section>
         </main>

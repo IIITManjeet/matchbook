@@ -5,7 +5,8 @@
 html,
 body {
   height: 100%;
-  overflow: hidden;
+  /* desktop locks scrolling at the layout level; small screens scroll */
+  overflow-x: hidden;
   background:
     radial-gradient(1200px 500px at 15% -10%, rgba(79, 142, 247, 0.12), transparent 60%),
     radial-gradient(1000px 500px at 90% -20%, rgba(139, 92, 246, 0.1), transparent 60%),

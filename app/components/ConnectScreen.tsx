@@ -37,8 +37,8 @@ export default function ConnectScreen() {
   };
 
   return (
-    <div className="flex h-screen items-center justify-center p-6">
-      <div className="w-full max-w-2xl rounded-2xl border border-line bg-panel p-10 shadow-card">
+    <div className="flex min-h-screen items-center justify-center overflow-y-auto p-4 sm:p-6">
+      <div className="w-full max-w-2xl rounded-2xl border border-line bg-panel p-6 shadow-card sm:p-10">
         <div className="flex flex-col items-center gap-3 text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-grad text-2xl font-black text-white shadow-glow">
             M
@@ -51,7 +51,7 @@ export default function ConnectScreen() {
           </p>
         </div>
 
-        <div className="mt-8 grid grid-cols-3 gap-3">
+        <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
           {FEATURES.map((f) => (
             <div
               key={f.title}
@@ -73,14 +73,14 @@ export default function ConnectScreen() {
             data-testid="connect-wallet"
             onClick={connect}
             disabled={connecting}
-            className="w-72 rounded-xl bg-brand-grad py-3 text-sm font-bold text-white transition-all hover:shadow-glow disabled:opacity-60"
+            className="w-full max-w-72 rounded-xl bg-brand-grad py-3 text-sm font-bold text-white transition-all hover:shadow-glow disabled:opacity-60"
           >
             {connecting ? "Connecting…" : "Connect Wallet"}
           </button>
           <button
             data-testid="enter-guest"
             onClick={enterAsGuest}
-            className="w-72 rounded-xl border border-line py-3 text-sm font-semibold text-muted transition-all hover:border-accent hover:text-ink"
+            className="w-full max-w-72 rounded-xl border border-line py-3 text-sm font-semibold text-muted transition-all hover:border-accent hover:text-ink"
           >
             Explore as guest
           </button>

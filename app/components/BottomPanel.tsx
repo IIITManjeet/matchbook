@@ -79,7 +79,7 @@ export default function BottomPanel() {
         ))}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
         {!wallet.connected ? (
           <Empty
             label={
@@ -93,7 +93,7 @@ export default function BottomPanel() {
             !position || position.size === 0 ? (
               <Empty label="No open position." />
             ) : (
-              <table className="w-full">
+              <table className="w-full min-w-[560px]">
                 <thead className="sticky top-0 bg-panel">
                   <tr>
                     <Th right={false}>Market</Th>
@@ -163,7 +163,7 @@ export default function BottomPanel() {
           ) : openOrders.length === 0 ? (
             <Empty label="No open orders." />
           ) : (
-            <table className="w-full">
+            <table className="w-full min-w-[560px]">
               <thead className="sticky top-0 bg-panel">
                 <tr>
                   <Th right={false}>Market</Th>
@@ -214,7 +214,7 @@ export default function BottomPanel() {
           )
         ) : tab === "balances" ? (
           isPerp ? (
-            <div className="flex gap-6 p-4">
+            <div className="flex flex-col gap-4 p-4 md:flex-row md:gap-6">
               <div className="grid flex-1 grid-cols-2 gap-x-8 gap-y-3 rounded-xl border border-line bg-panel2/50 p-4 text-xs">
                 {[
                   ["Collateral", position ? fmtPrice(position.collateral) : "0.00"],
@@ -228,7 +228,7 @@ export default function BottomPanel() {
                   </div>
                 ))}
               </div>
-              <div className="flex w-64 flex-col justify-center gap-2">
+              <div className="flex w-full flex-col justify-center gap-2 md:w-64">
                 <input
                   data-testid="collateral-amount"
                   type="number"
@@ -266,7 +266,7 @@ export default function BottomPanel() {
               </div>
             </div>
           ) : (
-            <table className="w-full">
+            <table className="w-full min-w-[560px]">
               <thead className="sticky top-0 bg-panel">
                 <tr>
                   <Th right={false}>Asset</Th>
@@ -292,7 +292,7 @@ export default function BottomPanel() {
         ) : fills.length === 0 ? (
           <Empty label="No trades yet — fills will appear here." />
         ) : (
-          <table className="w-full">
+          <table className="w-full min-w-[560px]">
             <thead className="sticky top-0 bg-panel">
               <tr>
                 <Th right={false}>Time</Th>

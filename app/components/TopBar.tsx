@@ -32,19 +32,19 @@ export default function TopBar() {
   const isPerp = market.symbol.endsWith("PERP");
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-5 rounded-xl border border-line bg-panel px-4 shadow-card">
+    <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-line bg-panel px-4 py-2 shadow-card xl:h-14 xl:flex-nowrap xl:py-0">
       <div className="flex items-center gap-2.5">
         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-grad text-xs font-black text-white shadow-glow">
           M
         </div>
         <span className="text-brand text-sm font-bold tracking-wide">MATCHBOOK</span>
-        <span className="rounded-md border border-line bg-panel2 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted">
+        <span className="hidden rounded-md border border-line bg-panel2 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted sm:inline">
           devnet
         </span>
       </div>
 
       {/* market switcher */}
-      <div className="flex items-center gap-1 rounded-lg border border-line bg-panel2 p-1">
+      <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-lg border border-line bg-panel2 p-1">
         {(markets.length > 0
           ? markets
           : [{ pubkey: "sim", kind: "spot" as const, symbol: market.symbol }]
@@ -73,22 +73,28 @@ export default function TopBar() {
         })}
       </div>
 
-      <div
-        className={`num text-lg font-semibold leading-none ${
-          lastSide === "buy" ? "text-up" : "text-down"
-        }`}
-      >
-        {lastPrice ? fmtPrice(lastPrice) : "—"}
+      <div className="flex items-center gap-2">
+        <span
+          className={`num text-lg font-semibold leading-none ${
+            lastSide === "buy" ? "text-up" : "text-down"
+          }`}
+        >
+          {lastPrice ? fmtPrice(lastPrice) : "—"}
+        </span>
+        {/* compact 24h change for widths where the stat strip is hidden */}
+        <span className={`num text-xs lg:hidden ${changeColor}`}>{fmtPct(stats.change24h)}</span>
       </div>
 
-      <div className="flex items-center gap-5">
+      <div className="hidden items-center gap-5 lg:flex">
         <Stat label="24h Change">
           <span className={changeColor}>{fmtPct(stats.change24h)}</span>
         </Stat>
         <Stat label="24h High">{fmtPrice(stats.high24h)}</Stat>
         <Stat label="24h Low">{fmtPrice(stats.low24h)}</Stat>
-        <Stat label={`24h Vol (${market.base})`}>{fmtCompact(stats.volumeBase)}</Stat>
-        <Stat label={`24h Vol (${market.quote})`}>{fmtCompact(stats.volumeQuote)}</Stat>
+        <div className="hidden items-center gap-5 min-[1350px]:flex">
+          <Stat label={`24h Vol (${market.base})`}>{fmtCompact(stats.volumeBase)}</Stat>
+          <Stat label={`24h Vol (${market.quote})`}>{fmtCompact(stats.volumeQuote)}</Stat>
+        </div>
         {isPerp && fundingBps !== null && (
           <Stat label="Funding / day">
             <span className={fundingBps >= 0 ? "text-up" : "text-down"}>
@@ -99,7 +105,7 @@ export default function TopBar() {
       </div>
 
       <div className="ml-auto flex items-center gap-3">
-        <span className="flex items-center gap-1.5 rounded-full border border-line bg-panel2 px-2.5 py-1 text-[11px] text-muted">
+        <span className="hidden items-center gap-1.5 rounded-full border border-line bg-panel2 px-2.5 py-1 text-[11px] text-muted sm:flex">
           <span
             className={`h-1.5 w-1.5 rounded-full ${
               !feedLive ? "bg-faint" : feedSource === "indexer" ? "bg-up shadow-glow-up" : "bg-accent"
