@@ -9,3 +9,4 @@ dist/
 .env.local
 app/.next/
 .test-build/
+app/e2e/*.png

@@ -12,6 +12,7 @@ export default function OrderForm() {
   const lastPrice = useTerminal((s) => s.lastPrice);
   const balances = useTerminal((s) => s.balances);
   const wallet = useTerminal((s) => s.wallet);
+  const tradingLive = useTerminal((s) => s.tradingLive);
   const connectWallet = useTerminal((s) => s.connectWallet);
   const placeOrder = useTerminal((s) => s.placeOrder);
   const quotedPrice = useTerminal((s) => s.quotedPrice);
@@ -183,9 +184,19 @@ export default function OrderForm() {
       )}
 
       <p className="mt-auto text-center text-[10px] leading-relaxed text-faint">
-        Orders are simulated locally against the feed.
-        <br />
-        On-chain placement lands with wallet signing.
+        {tradingLive ? (
+          <>
+            Orders are signed and placed on-chain.
+            <br />
+            Localnet burner wallet — funded by the market seeder.
+          </>
+        ) : (
+          <>
+            Orders are simulated locally against the feed.
+            <br />
+            Connect with the indexer up for on-chain placement.
+          </>
+        )}
       </p>
     </div>
   );

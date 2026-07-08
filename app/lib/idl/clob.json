@@ -1,0 +1,1568 @@
+{
+  "address": "9bezj1VAw4gTMKonswkKioRdsttD4UowXh87Fcw9Wtr2",
+  "metadata": {
+    "name": "clob",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Central limit orderbook DEX on Solana (learning project)"
+  },
+  "docs": [
+    "A central limit orderbook (CLOB) spot exchange.",
+    "",
+    "Milestone 1: markets, vaults, balances, post-only orders, cancels.",
+    "Milestone 2 (this code): taker matching, taker fees, fill-event queue",
+    "and the permissionless consume_events settlement crank.",
+    "Milestone 3: indexer, trading UI.",
+    "Milestone 4: perps (oracle, margin, funding, liquidation)."
+  ],
+  "instructions": [
+    {
+      "name": "cancel_order",
+      "docs": [
+        "Remove one of the caller's resting orders and unlock its funds."
+      ],
+      "discriminator": [
+        95,
+        129,
+        237,
+        240,
+        8,
+        49,
+        223,
+        132
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "open_orders"
+          ]
+        },
+        {
+          "name": "market",
+          "relations": [
+            "open_orders"
+          ]
+        },
+        {
+          "name": "open_orders",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  110,
+                  95,
+                  111,
+                  114,
+                  100,
+                  101,
+                  114,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bids",
+          "writable": true,
+          "relations": [
+            "market"
+          ]
+        },
+        {
+          "name": "asks",
+          "writable": true,
+          "relations": [
+            "market"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "side",
+          "type": {
+            "defined": {
+              "name": "Side"
+            }
+          }
+        },
+        {
+          "name": "order_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "consume_events",
+      "docs": [
+        "Settle up to `limit` fill events against the maker OpenOrders",
+        "accounts supplied as remaining accounts. Permissionless — this is",
+        "the crank any liquid market needs someone (M3: our indexer) to",
+        "turn."
+      ],
+      "discriminator": [
+        221,
+        145,
+        177,
+        52,
+        31,
+        47,
+        63,
+        201
+      ],
+      "accounts": [
+        {
+          "name": "cranker",
+          "signer": true
+        },
+        {
+          "name": "market"
+        },
+        {
+          "name": "event_queue",
+          "writable": true,
+          "relations": [
+            "market"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "limit",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "create_open_orders",
+      "docs": [
+        "Create the caller's per-market balance account. Required once per",
+        "(wallet, market) before depositing or trading."
+      ],
+      "discriminator": [
+        229,
+        194,
+        212,
+        172,
+        8,
+        10,
+        134,
+        147
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market"
+        },
+        {
+          "name": "open_orders",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  110,
+                  95,
+                  111,
+                  114,
+                  100,
+                  101,
+                  114,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "deposit",
+      "docs": [
+        "Move tokens from the caller's wallet into a market vault and credit",
+        "their free balance. `amount` is in raw token atoms."
+      ],
+      "discriminator": [
+        242,
+        35,
+        198,
+        137,
+        82,
+        225,
+        242,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "open_orders"
+          ]
+        },
+        {
+          "name": "market",
+          "relations": [
+            "open_orders"
+          ]
+        },
+        {
+          "name": "open_orders",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  110,
+                  95,
+                  111,
+                  114,
+                  100,
+                  101,
+                  114,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "user_token",
+          "docs": [
+            "The caller's token account for the same mint as the vault; the",
+            "token program itself rejects a mint mismatch on transfer."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "init_market",
+      "docs": [
+        "Create a market for a base/quote mint pair, its two token vaults",
+        "and its two orderbook sides. Permissionless: anyone can create a",
+        "market for any mint pair (one market per pair, enforced by PDA)."
+      ],
+      "discriminator": [
+        33,
+        253,
+        15,
+        116,
+        89,
+        25,
+        127,
+        236
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "base_mint"
+        },
+        {
+          "name": "quote_mint"
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "base_mint"
+              },
+              {
+                "kind": "account",
+                "path": "quote_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "base_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  115,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "quote_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bids",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  105,
+                  100,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "asks",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  115,
+                  107,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_queue",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  118,
+                  101,
+                  110,
+                  116,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "tick_size",
+          "type": "u64"
+        },
+        {
+          "name": "base_lot_size",
+          "type": "u64"
+        },
+        {
+          "name": "taker_fee_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "place_order",
+      "docs": [
+        "Place an order. `price` is in ticks, `qty` in base lots.",
+        "",
+        "The order first matches against the opposite side as far as its",
+        "limit price allows (unless PostOnly). The taker's balance changes",
+        "settle immediately; every maker fill is pushed onto the event",
+        "queue for the consume_events crank. Any remainder rests on the",
+        "book (Limit/PostOnly) or is dropped (ImmediateOrCancel)."
+      ],
+      "discriminator": [
+        51,
+        194,
+        155,
+        175,
+        109,
+        130,
+        96,
+        106
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "open_orders"
+          ]
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "relations": [
+            "open_orders"
+          ]
+        },
+        {
+          "name": "open_orders",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  110,
+                  95,
+                  111,
+                  114,
+                  100,
+                  101,
+                  114,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bids",
+          "writable": true,
+          "relations": [
+            "market"
+          ]
+        },
+        {
+          "name": "asks",
+          "writable": true,
+          "relations": [
+            "market"
+          ]
+        },
+        {
+          "name": "event_queue",
+          "writable": true,
+          "relations": [
+            "market"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "side",
+          "type": {
+            "defined": {
+              "name": "Side"
+            }
+          }
+        },
+        {
+          "name": "price",
+          "type": "u64"
+        },
+        {
+          "name": "qty",
+          "type": "u64"
+        },
+        {
+          "name": "order_type",
+          "type": {
+            "defined": {
+              "name": "OrderType"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "withdraw",
+      "docs": [
+        "Debit the caller's free balance and move tokens from the market",
+        "vault back to their wallet. The vault is owned by the market PDA,",
+        "so the program signs the transfer with the market's seeds."
+      ],
+      "discriminator": [
+        183,
+        18,
+        70,
+        156,
+        148,
+        109,
+        161,
+        34
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "open_orders"
+          ]
+        },
+        {
+          "name": "market",
+          "relations": [
+            "open_orders"
+          ]
+        },
+        {
+          "name": "open_orders",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  110,
+                  95,
+                  111,
+                  114,
+                  100,
+                  101,
+                  114,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "user_token",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "EventQueue",
+      "discriminator": [
+        41,
+        208,
+        116,
+        209,
+        173,
+        116,
+        141,
+        68
+      ]
+    },
+    {
+      "name": "Market",
+      "discriminator": [
+        219,
+        190,
+        213,
+        55,
+        0,
+        227,
+        198,
+        154
+      ]
+    },
+    {
+      "name": "OpenOrders",
+      "discriminator": [
+        139,
+        166,
+        123,
+        206,
+        111,
+        2,
+        116,
+        33
+      ]
+    },
+    {
+      "name": "OrderBookSide",
+      "discriminator": [
+        115,
+        154,
+        88,
+        152,
+        139,
+        105,
+        181,
+        88
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "Deposited",
+      "discriminator": [
+        111,
+        141,
+        26,
+        45,
+        161,
+        35,
+        100,
+        57
+      ]
+    },
+    {
+      "name": "EventsConsumed",
+      "discriminator": [
+        215,
+        189,
+        44,
+        221,
+        117,
+        199,
+        17,
+        252
+      ]
+    },
+    {
+      "name": "MarketInitialized",
+      "discriminator": [
+        134,
+        160,
+        122,
+        87,
+        50,
+        3,
+        255,
+        81
+      ]
+    },
+    {
+      "name": "OrderCanceled",
+      "discriminator": [
+        210,
+        147,
+        48,
+        247,
+        204,
+        118,
+        255,
+        121
+      ]
+    },
+    {
+      "name": "OrderFilled",
+      "discriminator": [
+        120,
+        124,
+        109,
+        66,
+        249,
+        116,
+        174,
+        30
+      ]
+    },
+    {
+      "name": "OrderPlaced",
+      "discriminator": [
+        96,
+        130,
+        204,
+        234,
+        169,
+        219,
+        216,
+        227
+      ]
+    },
+    {
+      "name": "Withdrawn",
+      "discriminator": [
+        20,
+        89,
+        223,
+        198,
+        194,
+        124,
+        219,
+        13
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidMarketParams",
+      "msg": "Tick size, lot size and fee must be valid"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidOrderParams",
+      "msg": "Price and quantity must be greater than zero"
+    },
+    {
+      "code": 6002,
+      "name": "OrderBookFull",
+      "msg": "Order book side is full"
+    },
+    {
+      "code": 6003,
+      "name": "OrderNotFound",
+      "msg": "Order not found on the book"
+    },
+    {
+      "code": 6004,
+      "name": "NotOrderOwner",
+      "msg": "Order belongs to another wallet"
+    },
+    {
+      "code": 6005,
+      "name": "InsufficientFunds",
+      "msg": "Insufficient free balance"
+    },
+    {
+      "code": 6006,
+      "name": "WouldCross",
+      "msg": "Post-only order would cross the book"
+    },
+    {
+      "code": 6007,
+      "name": "MathOverflow",
+      "msg": "Math overflow"
+    },
+    {
+      "code": 6008,
+      "name": "InvalidVault",
+      "msg": "Vault does not belong to this market"
+    },
+    {
+      "code": 6009,
+      "name": "SelfTrade",
+      "msg": "Order would match against the caller's own resting order"
+    },
+    {
+      "code": 6010,
+      "name": "EventQueueFull",
+      "msg": "Event queue is full — run the consume_events crank"
+    }
+  ],
+  "types": [
+    {
+      "name": "Deposited",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EventQueue",
+      "docs": [
+        "Ring buffer of fills awaiting settlement by the crank.",
+        "",
+        "Why this exists: when a taker matches a resting order, the maker's",
+        "proceeds must be credited to the maker's OpenOrders — but that account",
+        "was not (and cannot be) passed in the taker's transaction. Matching",
+        "therefore records the fill here, and anyone may later call",
+        "`consume_events` with a batch of maker OpenOrders accounts to apply",
+        "the credits. Same design as Serum/OpenBook.",
+        "",
+        "If the queue fills up, matching aborts (`EventQueueFull`) until a",
+        "crank drains it — maker funds are never silently dropped."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "head",
+            "docs": [
+              "Index of the oldest unconsumed event."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "count",
+            "docs": [
+              "Number of unconsumed events."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "seq",
+            "docs": [
+              "Total events ever pushed (next event's `seq`)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "events",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "FillEvent"
+                  }
+                },
+                90
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "EventsConsumed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "count",
+            "docs": [
+              "Number of fill events settled by this crank turn."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FillEvent",
+      "docs": [
+        "One fill, as recorded by the matching engine for later settlement.",
+        "",
+        "Field order is chosen so the struct packs with no implicit padding",
+        "(Pod requires a fixed, fully-specified layout): pubkeys first, then",
+        "u64s, then the flag byte plus explicit padding. 112 bytes."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "maker",
+            "docs": [
+              "Wallet that owned the resting (maker) order."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "taker",
+            "docs": [
+              "Wallet whose taker order caused the fill."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "maker_order_id",
+            "type": "u64"
+          },
+          {
+            "name": "taker_order_id",
+            "type": "u64"
+          },
+          {
+            "name": "price",
+            "docs": [
+              "Fill price in ticks — always the *maker's* price."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "qty",
+            "docs": [
+              "Fill quantity in base lots."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "seq",
+            "docs": [
+              "Monotonic sequence number, unique within the market."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "taker_side",
+            "docs": [
+              "Side of the *taker* (`SIDE_BID`/`SIDE_ASK`). The maker is by",
+              "definition on the opposite side; consume_events uses this to know",
+              "which balance to unlock and which to credit."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "_padding",
+            "type": {
+              "array": [
+                "u8",
+                7
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Market",
+      "docs": [
+        "One market per (base, quote) mint pair.",
+        "",
+        "PDA: `[\"market\", base_mint, quote_mint]` — deriving the address from",
+        "the mint pair is what makes markets unique and permissionless: nobody",
+        "has to maintain a registry, and the same pair can never be created",
+        "twice.",
+        "",
+        "Units convention (same scheme Serum/OpenBook use):",
+        "- a *lot* is the smallest tradeable base quantity: `base_lot_size`",
+        "base atoms.",
+        "- a *tick* is the smallest price increment: `tick_size` quote atoms",
+        "paid per base lot.",
+        "- so an order of `qty` lots at `price` ticks moves",
+        "`qty * base_lot_size` base atoms against `qty * price * tick_size`",
+        "quote atoms — all integer math, no floats on-chain."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "base_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "quote_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "base_vault",
+            "docs": [
+              "Token vault holding all deposited base tokens. Its authority is",
+              "this market PDA, so only the program can move funds out."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "quote_vault",
+            "docs": [
+              "Token vault holding all deposited quote tokens."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bids",
+            "docs": [
+              "Zero-copy orderbook side accounts."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "asks",
+            "type": "pubkey"
+          },
+          {
+            "name": "event_queue",
+            "docs": [
+              "Zero-copy fill-event ring buffer, drained by the consume_events",
+              "crank (see `state/event_queue.rs` for why it exists)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "tick_size",
+            "docs": [
+              "Quote atoms per (base lot × tick)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "base_lot_size",
+            "docs": [
+              "Base atoms per lot."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "taker_fee_bps",
+            "docs": [
+              "Taker fee in basis points, charged on quote notional per fill."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "fees_accrued",
+            "docs": [
+              "Quote atoms collected from taker fees. Sits in the quote vault;",
+              "a fee-withdrawal authority is deliberately out of scope until M3."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "next_order_id",
+            "docs": [
+              "Monotonic order id counter, unique within this market."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarketInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "base_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "quote_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "tick_size",
+            "type": "u64"
+          },
+          {
+            "name": "base_lot_size",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OpenOrders",
+      "docs": [
+        "A user's balance sheet for one market.",
+        "",
+        "PDA: `[\"open_orders\", market, owner]` — one per (wallet, market).",
+        "",
+        "Funds move through three stages:",
+        "wallet ──deposit──▶ free ──place order──▶ locked ──cancel──▶ free",
+        "and `free ──withdraw──▶ wallet`. The tokens themselves always sit in",
+        "the market vaults; these fields are the program's ledger over them.",
+        "Locked balances back resting orders, so they can never be withdrawn",
+        "out from under the book."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "base_free",
+            "docs": [
+              "Base atoms available to withdraw or place asks with."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "base_locked",
+            "docs": [
+              "Base atoms backing resting ask orders."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "quote_free",
+            "docs": [
+              "Quote atoms available to withdraw or place bids with."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "quote_locked",
+            "docs": [
+              "Quote atoms backing resting bid orders."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Order",
+      "docs": [
+        "One resting order. 56 bytes, `Pod` so it can live in a zero-copy array."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "order_id",
+            "type": "u64"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "price",
+            "docs": [
+              "In ticks (quote atoms per base lot = price × tick_size)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "qty",
+            "docs": [
+              "Remaining quantity in base lots."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OrderBookSide",
+      "docs": [
+        "One side of the book, kept sorted best-first with time priority",
+        "within a price level.",
+        "",
+        "This is a *zero-copy* account: at ~7.2 KB it is too large to borsh",
+        "round-trip on every instruction within Solana's compute/stack budget,",
+        "so Anchor `bytemuck`-casts the raw account bytes in place instead",
+        "(that's also why every field must be `Pod`: fixed layout, no enums,",
+        "no Options, explicit padding).",
+        "",
+        "A sorted array with linear shifts is O(n) per insert — fine for 128",
+        "orders and easy to reason about. Replacing it with a crit-bit tree /",
+        "slab like Serum's (thousands of orders, O(log n)) is a planned",
+        "milestone-2 exercise; the instruction interface won't change."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "side",
+            "docs": [
+              "`SIDE_BID` or `SIDE_ASK`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "_padding",
+            "type": {
+              "array": [
+                "u8",
+                5
+              ]
+            }
+          },
+          {
+            "name": "num_orders",
+            "type": "u16"
+          },
+          {
+            "name": "orders",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "Order"
+                  }
+                },
+                128
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "OrderCanceled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "order_id",
+            "type": "u64"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OrderFilled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "maker",
+            "type": "pubkey"
+          },
+          {
+            "name": "taker",
+            "type": "pubkey"
+          },
+          {
+            "name": "maker_order_id",
+            "type": "u64"
+          },
+          {
+            "name": "taker_order_id",
+            "type": "u64"
+          },
+          {
+            "name": "taker_side",
+            "docs": [
+              "0 = bid, 1 = ask — the side of the *taker*."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "price",
+            "docs": [
+              "Fill price in ticks (the maker's price)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "qty",
+            "docs": [
+              "Fill quantity in base lots."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "taker_fee",
+            "docs": [
+              "Taker fee for this fill, in quote atoms."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OrderPlaced",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "order_id",
+            "type": "u64"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "side",
+            "docs": [
+              "0 = bid, 1 = ask"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "price",
+            "docs": [
+              "In ticks."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "qty",
+            "docs": [
+              "In base lots."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OrderType",
+      "docs": [
+        "How an incoming order interacts with the opposite side of the book."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Limit"
+          },
+          {
+            "name": "PostOnly"
+          },
+          {
+            "name": "ImmediateOrCancel"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Side",
+      "docs": [
+        "Which side of the book an order rests on / an instruction targets."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Bid"
+          },
+          {
+            "name": "Ask"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Withdrawn",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

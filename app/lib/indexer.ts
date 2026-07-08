@@ -11,7 +11,8 @@
 
 import type { BookLevel, Candle, FeedSnapshot, MarketStats, Side, Trade } from "./types";
 
-const HTTP_URL = process.env.NEXT_PUBLIC_INDEXER_URL ?? "http://127.0.0.1:8081";
+export const INDEXER_HTTP = process.env.NEXT_PUBLIC_INDEXER_URL ?? "http://127.0.0.1:8081";
+const HTTP_URL = INDEXER_HTTP;
 const BASE_DECIMALS = Number(process.env.NEXT_PUBLIC_BASE_DECIMALS ?? 9);
 const QUOTE_DECIMALS = Number(process.env.NEXT_PUBLIC_QUOTE_DECIMALS ?? 6);
 const EMIT_MS = 400;
@@ -167,6 +168,21 @@ export class IndexerFeed {
 
   get marketPubkey() {
     return this.market.pubkey;
+  }
+
+  /** Everything the on-chain client needs to trade this market. */
+  get meta() {
+    return {
+      pubkey: this.market.pubkey,
+      tickSize: this.market.tick_size,
+      baseLotSize: this.market.base_lot_size,
+      baseDecimals: BASE_DECIMALS,
+      quoteDecimals: QUOTE_DECIMALS,
+    };
+  }
+
+  get converter(): Converter {
+    return this.conv;
   }
 
   start(onTick: (snap: FeedSnapshot) => void, intervalMs = EMIT_MS) {

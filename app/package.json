@@ -8,9 +8,11 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "test:e2e": "node e2e/terminal.e2e.mjs"
+    "test:e2e": "node e2e/terminal.e2e.mjs",
+    "test:e2e:sign": "node e2e/signing.e2e.mjs"
   },
   "dependencies": {
+    "@coral-xyz/anchor": "^0.31.1",
     "lightweight-charts": "^4.2.3",
     "next": "14.2.35",
     "react": "^18",

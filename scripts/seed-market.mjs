@@ -36,6 +36,11 @@ const connection = new anchor.web3.Connection(RPC, "confirmed");
 const payer = Keypair.generate();
 const maker = Keypair.generate();
 const taker = Keypair.generate();
+// The terminal's burner wallet: fund + deposit for it so the UI can
+// trade this market straight away.
+const dev = Keypair.fromSecretKey(
+  Uint8Array.from(JSON.parse(fs.readFileSync("app/lib/dev-wallet.json", "utf-8"))),
+);
 
 const provider = new anchor.AnchorProvider(connection, new anchor.Wallet(payer), {
   commitment: "confirmed",
@@ -57,6 +62,7 @@ console.log("funding accounts…");
 await airdrop(payer.publicKey, 100);
 await airdrop(maker.publicKey, 10);
 await airdrop(taker.publicKey, 10);
+await airdrop(dev.publicKey, 10);
 
 const baseMint = await createMint(connection, payer, payer.publicKey, null, 9);
 const quoteMint = await createMint(connection, payer, payer.publicKey, null, 6);
@@ -70,6 +76,7 @@ const asks = pda(Buffer.from("asks"), market.toBuffer());
 const eventQueue = pda(Buffer.from("events"), market.toBuffer());
 const makerOO = pda(Buffer.from("open_orders"), market.toBuffer(), maker.publicKey.toBuffer());
 const takerOO = pda(Buffer.from("open_orders"), market.toBuffer(), taker.publicKey.toBuffer());
+const devOO = pda(Buffer.from("open_orders"), market.toBuffer(), dev.publicKey.toBuffer());
 
 console.log("market:", market.toBase58());
 
@@ -94,6 +101,7 @@ await program.methods
 for (const [user, oo] of [
   [maker, makerOO],
   [taker, takerOO],
+  [dev, devOO],
 ]) {
   await program.methods
     .createOpenOrders()
@@ -134,6 +142,8 @@ async function fund(user, oo) {
 }
 await fund(maker, makerOO);
 await fund(taker, takerOO);
+await fund(dev, devOO);
+console.log("terminal wallet funded:", dev.publicKey.toBase58());
 
 function place(user, oo, side, price, qty, type) {
   return program.methods

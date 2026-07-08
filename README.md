@@ -71,11 +71,19 @@ npm test          # vitest unit tests: mock feed + order/balance logic
 npm run test:e2e  # puppeteer smoke test (needs `npm start` running first)
 ```
 
-It is fully wired to a simulated feed (`app/lib/mock.ts`): random-walk
-price, persistent orderbook levels, trade tape, candles, mock wallet,
-balances, and a simulated order lifecycle (place → pending → open →
-filled when the tape crosses). Swapping `MockFeed` for the M3 indexer
-websocket is the only integration point.
+On load it probes the indexer and streams real book deltas, trades and
+candles from it (REST bootstrap + websocket), falling back to the
+`app/lib/mock.ts` simulator when the indexer is down. With the indexer
+up, **Connect Wallet** uses a localnet burner keypair
+(`app/lib/dev-wallet.json`, funded by the market seeder) and the ticket
+signs real `place_order` / `cancel_order` transactions: balances come
+from the on-chain `OpenOrders` account, orders and fills from the
+indexer. The signer sits behind a wallet-adapter-shaped interface, so a
+browser-extension wallet is a drop-in for devnet later.
+
+```bash
+npm run test:e2e:sign  # e2e: connect → rest bid → verify lock → cancel → market buy
+```
 
 ## Roadmap
 
@@ -86,13 +94,13 @@ websocket is the only integration point.
       to the market, fills flow through an on-chain event queue and the
       permissionless `consume_events` crank settles maker proceeds.
       Stretch (open): replace the sorted-array book with a crit-bit slab.
-- [ ] **M3 — Off-chain stack**: ✅ Rust indexer (log subscription →
+- [x] **M3 — Off-chain stack**: Rust indexer (log subscription →
       Postgres, restart-safe backfill, live book reconstruction, 1m
-      candles) with REST + websocket API, verified end-to-end against
-      the integration suite. ✅ Terminal runs on the live indexer feed
-      (REST bootstrap + websocket deltas, automatic fallback to the
-      simulator when the indexer is down). Remaining: wallet-adapter
-      transaction signing.
+      candles) with REST + websocket API. Terminal runs on the live
+      indexer feed (simulator fallback) and signs real orders with a
+      localnet burner wallet — placement, cancels, locks and fills all
+      verified end-to-end. Devnet polish left: browser-extension
+      wallets via the adapter interface.
 - [ ] **M4 — Perps**: Pyth oracle integration, margin accounts, funding
       rate, liquidation instruction + liquidator bot.
 
