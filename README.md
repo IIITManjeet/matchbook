@@ -53,6 +53,13 @@ cargo test            # event decoding + book reconstruction unit tests
 
 See [indexer/README.md](indexer/README.md) for the API and design notes.
 
+To generate localnet activity (fresh market, resting grid, streaming
+trades) for the indexer and terminal to display:
+
+```powershell
+node scripts/seed-market.mjs 5   # trade for 5 minutes
+```
+
 ## Trading terminal
 
 The `app/` terminal runs on the Windows side (Node 18.17 → Next.js 14):
@@ -82,8 +89,10 @@ websocket is the only integration point.
 - [ ] **M3 — Off-chain stack**: ✅ Rust indexer (log subscription →
       Postgres, restart-safe backfill, live book reconstruction, 1m
       candles) with REST + websocket API, verified end-to-end against
-      the integration suite. Remaining: swap the terminal's `MockFeed`
-      for the indexer websocket + wallet-adapter transaction signing.
+      the integration suite. ✅ Terminal runs on the live indexer feed
+      (REST bootstrap + websocket deltas, automatic fallback to the
+      simulator when the indexer is down). Remaining: wallet-adapter
+      transaction signing.
 - [ ] **M4 — Perps**: Pyth oracle integration, margin accounts, funding
       rate, liquidation instruction + liquidator bot.
 

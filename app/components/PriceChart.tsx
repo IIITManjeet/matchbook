@@ -122,12 +122,16 @@ export default function PriceChart() {
     return useTerminal.subscribe((s) => apply(s.candles));
   }, []);
 
+  const feedSource = useTerminal((s) => s.feedSource);
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-9 shrink-0 items-center gap-3 border-b border-line px-3">
         <span className="text-xs font-semibold text-ink">Price</span>
         <span className="rounded bg-panel2 px-1.5 py-0.5 text-[10px] font-medium text-muted">1m</span>
-        <span className="ml-auto text-[10px] text-faint">mock data · indexer feed lands in M3</span>
+        <span className="ml-auto text-[10px] text-faint">
+          {feedSource === "indexer" ? "indexer feed · on-chain data" : "mock data · simulator"}
+        </span>
       </div>
       <div ref={containerRef} className="min-h-0 flex-1" />
     </div>

@@ -5,7 +5,7 @@ const priceFmt = new Intl.NumberFormat("en-US", {
 
 const sizeFmt = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
+  maximumFractionDigits: 3, // on-chain lot sizes go down to 0.001 SOL
 });
 
 const compactFmt = new Intl.NumberFormat("en-US", {
