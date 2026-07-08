@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { IndexerFeed } from "./indexer";
 import { MockFeed } from "./mock";
 import type {
   Balance,
@@ -26,8 +27,11 @@ const MARKET: MarketInfo = {
 
 const TAKER_FEE = 0.0004;
 
-let feed: MockFeed | null = null;
+let feed: MockFeed | IndexerFeed | null = null;
+let feedStarting = false; // guards the async probe against double-invoked effects
 let orderSeq = 0;
+
+export type FeedSource = "indexer" | "mock";
 
 interface TerminalState {
   market: MarketInfo;
@@ -39,6 +43,7 @@ interface TerminalState {
   lastSide: Side;
   stats: MarketStats;
   feedLive: boolean;
+  feedSource: FeedSource | null;
 
   wallet: { connected: boolean; address: string | null };
   balances: Record<string, Balance>;
@@ -73,6 +78,7 @@ export const useTerminal = create<TerminalState>((set, get) => ({
   lastSide: "buy",
   stats: { change24h: 0, high24h: 0, low24h: 0, volumeBase: 0, volumeQuote: 0 },
   feedLive: false,
+  feedSource: null,
 
   wallet: { connected: false, address: null },
   balances: {
@@ -84,21 +90,31 @@ export const useTerminal = create<TerminalState>((set, get) => ({
   quotedPrice: null,
 
   startFeed: () => {
-    if (feed) return;
-    feed = new MockFeed();
-    feed.start((snap: FeedSnapshot) => {
-      set({
-        bids: snap.bids,
-        asks: snap.asks,
-        trades: snap.trades,
-        candles: snap.candles,
-        lastPrice: snap.lastPrice,
-        lastSide: snap.lastSide,
-        stats: snap.stats,
-        feedLive: true,
+    if (feed || feedStarting) return;
+    feedStarting = true;
+
+    const attach = (f: MockFeed | IndexerFeed, source: FeedSource) => {
+      feed = f;
+      f.start((snap: FeedSnapshot) => {
+        set({
+          bids: snap.bids,
+          asks: snap.asks,
+          trades: snap.trades,
+          candles: snap.candles,
+          lastPrice: snap.lastPrice,
+          lastSide: snap.lastSide,
+          stats: snap.stats,
+          feedLive: true,
+          feedSource: source,
+        });
+        settleCrossedOrders(set, get, snap.lastPrice);
       });
-      settleCrossedOrders(set, get, snap.lastPrice);
-    });
+    };
+
+    // Prefer the real indexer; fall back to the simulator when it's not up.
+    IndexerFeed.connect()
+      .then((f) => attach(f, "indexer"))
+      .catch(() => attach(new MockFeed(), "mock"));
   },
 
   connectWallet: () =>

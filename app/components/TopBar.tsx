@@ -18,6 +18,7 @@ export default function TopBar() {
   const lastSide = useTerminal((s) => s.lastSide);
   const stats = useTerminal((s) => s.stats);
   const feedLive = useTerminal((s) => s.feedLive);
+  const feedSource = useTerminal((s) => s.feedSource);
   const wallet = useTerminal((s) => s.wallet);
   const connectWallet = useTerminal((s) => s.connectWallet);
   const disconnectWallet = useTerminal((s) => s.disconnectWallet);
@@ -57,8 +58,12 @@ export default function TopBar() {
 
       <div className="ml-auto flex items-center gap-3">
         <span className="flex items-center gap-1.5 text-[11px] text-muted">
-          <span className={`h-1.5 w-1.5 rounded-full ${feedLive ? "bg-up" : "bg-faint"}`} />
-          {feedLive ? "mock feed" : "connecting"}
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              !feedLive ? "bg-faint" : feedSource === "indexer" ? "bg-up" : "bg-accent"
+            }`}
+          />
+          {!feedLive ? "connecting" : feedSource === "indexer" ? "live" : "mock feed"}
         </span>
         {wallet.connected && wallet.address ? (
           <button

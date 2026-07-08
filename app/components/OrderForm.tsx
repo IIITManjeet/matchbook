@@ -183,9 +183,9 @@ export default function OrderForm() {
       )}
 
       <p className="mt-auto text-center text-[10px] leading-relaxed text-faint">
-        Orders are simulated against the mock feed.
+        Orders are simulated locally against the feed.
         <br />
-        On-chain placement wires up in M3.
+        On-chain placement lands with wallet signing.
       </p>
     </div>
   );
