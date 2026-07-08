@@ -30,6 +30,7 @@ pub fn router(shared: App) -> Router {
         .route("/markets/:market/candles", get(candles))
         .route("/markets/:market/book", get(book))
         .route("/markets/:market/orders", get(orders))
+        .route("/markets/:market/funding", get(funding))
         .route("/ws", get(ws_upgrade))
         .layer(CorsLayer::permissive()) // dev tool; lock down if ever public
         .with_state(shared)
@@ -142,6 +143,14 @@ async fn orders(
         .await
         .map_err(internal)?;
     Ok(Json(rows))
+}
+
+async fn funding(
+    State(app): State<App>,
+    Path(market): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let latest = app.store.latest_funding(&market).await.map_err(internal)?;
+    Ok(Json(json!({ "market": market, "latest": latest })))
 }
 
 // ── WebSocket ──────────────────────────────────────────────────────────

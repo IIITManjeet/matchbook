@@ -21,6 +21,7 @@ pub struct MarketRow {
     pub quote_mint: String,
     pub tick_size: i64,
     pub base_lot_size: i64,
+    pub kind: String, // "spot" | "perp"
     pub created_at: DateTime<Utc>,
 }
 
@@ -102,6 +103,7 @@ impl Store {
         Ok(row.map(|r| r.get(0)))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn upsert_market(
         &self,
         pubkey: &str,
@@ -109,12 +111,13 @@ impl Store {
         quote_mint: &str,
         tick_size: u64,
         base_lot_size: u64,
+        kind: &str,
         slot: u64,
         ts: DateTime<Utc>,
     ) -> Result<()> {
         sqlx::query(
-            "INSERT INTO markets (pubkey, base_mint, quote_mint, tick_size, base_lot_size, created_slot, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
+            "INSERT INTO markets (pubkey, base_mint, quote_mint, tick_size, base_lot_size, kind, created_slot, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              ON CONFLICT (pubkey) DO NOTHING",
         )
         .bind(pubkey)
@@ -122,7 +125,56 @@ impl Store {
         .bind(quote_mint)
         .bind(tick_size as i64)
         .bind(base_lot_size as i64)
+        .bind(kind)
         .bind(slot as i64)
+        .bind(ts)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn insert_funding(
+        &self,
+        market: &str,
+        premium_bps: i64,
+        cum_funding: &str,
+        ts: DateTime<Utc>,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO funding (market, premium_bps, cum_funding, ts) VALUES ($1,$2,$3,$4)",
+        )
+        .bind(market)
+        .bind(premium_bps)
+        .bind(cum_funding)
+        .bind(ts)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn insert_liquidation(
+        &self,
+        market: &str,
+        owner: &str,
+        liquidator: &str,
+        size_closed: i64,
+        price: u64,
+        penalty: u64,
+        signature: &str,
+        ts: DateTime<Utc>,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO liquidations (market, owner, liquidator, size_closed, price, penalty, signature, ts)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+        )
+        .bind(market)
+        .bind(owner)
+        .bind(liquidator)
+        .bind(size_closed)
+        .bind(price as i64)
+        .bind(penalty as i64)
+        .bind(signature)
         .bind(ts)
         .execute(&self.pool)
         .await?;
@@ -279,11 +331,29 @@ impl Store {
 
     pub async fn markets(&self) -> Result<Vec<MarketRow>> {
         Ok(sqlx::query_as::<_, MarketRow>(
-            "SELECT pubkey, base_mint, quote_mint, tick_size, base_lot_size, created_at
+            "SELECT pubkey, base_mint, quote_mint, tick_size, base_lot_size, kind, created_at
              FROM markets ORDER BY created_at",
         )
         .fetch_all(&self.pool)
         .await?)
+    }
+
+    /// Most recent funding crank for a perp market.
+    pub async fn latest_funding(&self, market: &str) -> Result<Option<serde_json::Value>> {
+        let row = sqlx::query(
+            "SELECT premium_bps, cum_funding, ts FROM funding
+             WHERE market = $1 ORDER BY ts DESC LIMIT 1",
+        )
+        .bind(market)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|r| {
+            serde_json::json!({
+                "premium_bps": r.get::<i64, _>("premium_bps"),
+                "cum_funding": r.get::<String, _>("cum_funding"),
+                "ts": r.get::<DateTime<Utc>, _>("ts"),
+            })
+        }))
     }
 
     pub async fn trades(&self, market: &str, limit: i64) -> Result<Vec<TradeRow>> {

@@ -19,9 +19,20 @@ use crate::store::Store;
 /// A message fanned out to websocket subscribers.
 #[derive(Debug, Clone)]
 pub struct WsBroadcast {
-    pub channel: &'static str, // "trades" | "book"
+    pub channel: &'static str, // "trades" | "book" | "mark" | "funding" | "liquidations"
     pub market: String,
     pub payload: serde_json::Value,
+}
+
+/// Perp events are normalized into the spot tick/lot scheme on ingest:
+/// with SOL(9dp)/USDC(6dp), ui_price = ticks × 0.1 and 1 lot = 0.001
+/// SOL, exactly like the spot market rows.
+const PERP_TICK_SIZE: u64 = 100;
+const PERP_LOT_SIZE: u64 = 1_000_000;
+
+/// quote atoms per whole base unit → ticks (ui × 10).
+fn perp_price_to_ticks(price: u64) -> u64 {
+    price / 100_000
 }
 
 pub struct Shared {
@@ -66,6 +77,7 @@ pub async fn process_tx(
                         &e.quote_mint.to_base58(),
                         e.tick_size,
                         e.base_lot_size,
+                        "spot",
                         slot,
                         ts,
                     )
@@ -173,6 +185,141 @@ pub async fn process_tx(
             }
             ClobEvent::EventsConsumed(e) => {
                 tracing::debug!(market = %e.market.to_base58(), count = e.count, "crank turn");
+            }
+
+            // ── M4: perps ─────────────────────────────────────────────
+            //
+            // Perp events carry native units (quote atoms per whole
+            // base unit; base atoms). They are normalized here to the
+            // same tick/lot scheme as spot markets so every downstream
+            // table, endpoint and UI conversion works unchanged.
+            ClobEvent::PerpMarketInitialized(e) => {
+                let market = e.market.to_base58();
+                tracing::info!(market, "perp market initialized");
+                shared
+                    .store
+                    .upsert_market(
+                        &market,
+                        "SOL-PERP", // synthetic base: perps have no base mint
+                        &e.collateral_mint.to_base58(),
+                        PERP_TICK_SIZE,
+                        PERP_LOT_SIZE,
+                        "perp",
+                        slot,
+                        ts,
+                    )
+                    .await?;
+            }
+            ClobEvent::OraclePriceSet(e) => {
+                let market = e.market.to_base58();
+                let ticks = perp_price_to_ticks(e.price);
+                // Zero-volume candle: the oracle drives the perp chart
+                // even when nobody trades.
+                shared.store.upsert_candle(&market, ts, ticks, 0).await?;
+                shared.broadcast("mark", market, json!({ "price": ticks, "ts": ts }));
+            }
+            ClobEvent::PerpPositionChanged(e) => {
+                let market = e.market.to_base58();
+                let ticks = perp_price_to_ticks(e.price);
+                let lots = e.delta.unsigned_abs() / PERP_LOT_SIZE;
+                let side = if e.delta > 0 { 0u8 } else { 1u8 };
+                shared
+                    .store
+                    .insert_trade(
+                        &market,
+                        &market, // counterparty is the market itself (oracle fill)
+                        &e.owner.to_base58(),
+                        0,
+                        0,
+                        side,
+                        ticks,
+                        lots,
+                        e.fee,
+                        slot,
+                        signature,
+                        ts,
+                    )
+                    .await?;
+                shared.store.upsert_candle(&market, ts, ticks, lots).await?;
+                shared.broadcast(
+                    "trades",
+                    market,
+                    json!({
+                        "price": ticks,
+                        "qty": lots,
+                        "taker_side": side,
+                        "ts": ts,
+                        "signature": signature,
+                    }),
+                );
+            }
+            ClobEvent::FundingUpdated(e) => {
+                let market = e.market.to_base58();
+                shared
+                    .store
+                    .insert_funding(&market, e.premium_bps, &e.cum_funding.to_string(), ts)
+                    .await?;
+                shared.broadcast(
+                    "funding",
+                    market,
+                    json!({ "premium_bps": e.premium_bps, "ts": ts }),
+                );
+            }
+            ClobEvent::PositionLiquidated(e) => {
+                let market = e.market.to_base58();
+                tracing::info!(market, owner = %e.owner.to_base58(), "liquidation");
+                shared
+                    .store
+                    .insert_liquidation(
+                        &market,
+                        &e.owner.to_base58(),
+                        &e.liquidator.to_base58(),
+                        e.size_closed,
+                        e.price,
+                        e.penalty,
+                        signature,
+                        ts,
+                    )
+                    .await?;
+                shared.broadcast(
+                    "liquidations",
+                    market,
+                    json!({
+                        "owner": e.owner.to_base58(),
+                        "size_closed": e.size_closed,
+                        "price": perp_price_to_ticks(e.price),
+                        "penalty": e.penalty,
+                        "ts": ts,
+                    }),
+                );
+            }
+            ClobEvent::CollateralDeposited(e) => {
+                shared
+                    .store
+                    .insert_transfer(
+                        &e.market.to_base58(),
+                        &e.owner.to_base58(),
+                        "collateral",
+                        e.amount as i64,
+                        slot,
+                        signature,
+                        ts,
+                    )
+                    .await?;
+            }
+            ClobEvent::CollateralWithdrawn(e) => {
+                shared
+                    .store
+                    .insert_transfer(
+                        &e.market.to_base58(),
+                        &e.owner.to_base58(),
+                        "collateral",
+                        -(e.amount as i64),
+                        slot,
+                        signature,
+                        ts,
+                    )
+                    .await?;
             }
         }
     }

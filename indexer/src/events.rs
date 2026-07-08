@@ -91,6 +91,70 @@ pub struct EventsConsumed {
     pub count: u64,
 }
 
+// ── M4: perps ──────────────────────────────────────────────────────────
+
+#[derive(Debug, BorshDeserialize)]
+pub struct PerpMarketInitialized {
+    pub market: Pubkey,
+    pub collateral_mint: Pubkey,
+    pub oracle_price: u64,
+    pub taker_fee_bps: u16,
+    pub init_margin_bps: u16,
+    pub maint_margin_bps: u16,
+    pub max_funding_bps: u16,
+}
+
+#[derive(Debug, BorshDeserialize)]
+pub struct OraclePriceSet {
+    pub market: Pubkey,
+    pub price: u64,
+    pub ts: i64,
+}
+
+#[derive(Debug, BorshDeserialize)]
+pub struct CollateralDeposited {
+    pub market: Pubkey,
+    pub owner: Pubkey,
+    pub amount: u64,
+}
+
+#[derive(Debug, BorshDeserialize)]
+pub struct CollateralWithdrawn {
+    pub market: Pubkey,
+    pub owner: Pubkey,
+    pub amount: u64,
+}
+
+#[derive(Debug, BorshDeserialize)]
+pub struct PerpPositionChanged {
+    pub market: Pubkey,
+    pub owner: Pubkey,
+    pub delta: i64,
+    pub price: u64,
+    pub fee: u64,
+    pub realized_pnl: i64,
+    pub base_position_after: i64,
+    pub collateral_after: u64,
+}
+
+#[derive(Debug, BorshDeserialize)]
+pub struct FundingUpdated {
+    pub market: Pubkey,
+    pub premium_bps: i64,
+    pub cum_funding: i128,
+    pub ts: i64,
+}
+
+#[derive(Debug, BorshDeserialize)]
+pub struct PositionLiquidated {
+    pub market: Pubkey,
+    pub owner: Pubkey,
+    pub liquidator: Pubkey,
+    pub size_closed: i64,
+    pub price: u64,
+    pub penalty: u64,
+}
+
 #[derive(Debug)]
 pub enum ClobEvent {
     MarketInitialized(MarketInitialized),
@@ -100,6 +164,13 @@ pub enum ClobEvent {
     OrderCanceled(OrderCanceled),
     OrderFilled(OrderFilled),
     EventsConsumed(EventsConsumed),
+    PerpMarketInitialized(PerpMarketInitialized),
+    OraclePriceSet(OraclePriceSet),
+    CollateralDeposited(CollateralDeposited),
+    CollateralWithdrawn(CollateralWithdrawn),
+    PerpPositionChanged(PerpPositionChanged),
+    FundingUpdated(FundingUpdated),
+    PositionLiquidated(PositionLiquidated),
 }
 
 fn discriminator(name: &str) -> [u8; 8] {
@@ -131,7 +202,14 @@ pub fn decode_event(data: &[u8]) -> Option<ClobEvent> {
         OrderPlaced,
         OrderCanceled,
         OrderFilled,
-        EventsConsumed
+        EventsConsumed,
+        PerpMarketInitialized,
+        OraclePriceSet,
+        CollateralDeposited,
+        CollateralWithdrawn,
+        PerpPositionChanged,
+        FundingUpdated,
+        PositionLiquidated
     );
     None
 }
@@ -190,6 +268,14 @@ mod tests {
         assert_eq!(discriminator("OrderFilled"), [120, 124, 109, 66, 249, 116, 174, 30]);
         assert_eq!(discriminator("OrderPlaced"), [96, 130, 204, 234, 169, 219, 216, 227]);
         assert_eq!(discriminator("Withdrawn"), [20, 89, 223, 198, 194, 124, 219, 13]);
+        // M4 perp events
+        assert_eq!(discriminator("PerpMarketInitialized"), [211, 201, 85, 80, 15, 90, 233, 106]);
+        assert_eq!(discriminator("OraclePriceSet"), [24, 244, 72, 175, 209, 136, 108, 67]);
+        assert_eq!(discriminator("CollateralDeposited"), [244, 62, 77, 11, 135, 112, 61, 96]);
+        assert_eq!(discriminator("CollateralWithdrawn"), [51, 224, 133, 106, 74, 173, 72, 82]);
+        assert_eq!(discriminator("PerpPositionChanged"), [88, 216, 175, 234, 42, 90, 79, 103]);
+        assert_eq!(discriminator("FundingUpdated"), [206, 76, 89, 81, 126, 37, 255, 224]);
+        assert_eq!(discriminator("PositionLiquidated"), [40, 107, 90, 214, 96, 30, 61, 128]);
     }
 
     fn encode_order_placed() -> String {
