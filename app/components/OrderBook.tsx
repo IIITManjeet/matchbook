@@ -45,6 +45,66 @@ export default function OrderBook() {
   const lastSide = useTerminal((s) => s.lastSide);
   const market = useTerminal((s) => s.market);
   const quotePrice = useTerminal((s) => s.quotePrice);
+  const fundingBps = useTerminal((s) => s.fundingBps);
+  const position = useTerminal((s) => s.position);
+
+  // Perps have no resting book — fills execute against the oracle.
+  if (market.symbol.endsWith("PERP")) {
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex h-10 shrink-0 items-center border-b border-line px-4">
+          <span className="text-xs font-semibold text-ink">Oracle Market</span>
+          <span className="ml-auto rounded bg-accent2/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-accent2">
+            perp
+          </span>
+        </div>
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 p-4">
+          <div className="flex flex-col items-center gap-1">
+            <span className="text-[10px] uppercase tracking-wider text-faint">Mark price</span>
+            <span
+              className={`num text-3xl font-bold ${lastSide === "buy" ? "text-up" : "text-down"}`}
+            >
+              {lastPrice ? fmtPrice(lastPrice) : "—"}
+            </span>
+          </div>
+          <div className="grid w-full grid-cols-2 gap-2">
+            <div className="flex flex-col items-center gap-1 rounded-xl border border-line bg-panel2/60 p-3">
+              <span className="text-[10px] uppercase tracking-wider text-faint">Funding / day</span>
+              <span
+                className={`num text-sm font-semibold ${
+                  (fundingBps ?? 0) >= 0 ? "text-up" : "text-down"
+                }`}
+              >
+                {fundingBps !== null ? `${(fundingBps / 100).toFixed(2)}%` : "—"}
+              </span>
+            </div>
+            <div className="flex flex-col items-center gap-1 rounded-xl border border-line bg-panel2/60 p-3">
+              <span className="text-[10px] uppercase tracking-wider text-faint">Max leverage</span>
+              <span className="num text-sm font-semibold text-ink">10x</span>
+            </div>
+          </div>
+          {position && position.size !== 0 && (
+            <div className="w-full rounded-xl border border-line bg-panel2/60 p-3 text-center">
+              <span className="text-[10px] uppercase tracking-wider text-faint">Your exposure</span>
+              <p
+                className={`num mt-1 text-sm font-semibold ${
+                  position.size > 0 ? "text-up" : "text-down"
+                }`}
+              >
+                {position.size > 0 ? "+" : ""}
+                {fmtSize(position.size)} SOL
+              </p>
+            </div>
+          )}
+          <p className="text-center text-[10px] leading-relaxed text-faint">
+            Orders fill at the keeper-pushed oracle price.
+            <br />
+            Skew between longs and shorts sets the funding rate.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const askRows = asks.slice(0, ROWS);
   const bidRows = bids.slice(0, ROWS);
@@ -61,9 +121,9 @@ export default function OrderBook() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-9 shrink-0 items-center border-b border-line px-3">
+      <div className="flex h-10 shrink-0 items-center border-b border-line px-4">
         <span className="text-xs font-semibold text-ink">Order Book</span>
-        <span className="num ml-auto text-[10px] text-faint">
+        <span className="num ml-auto rounded-md bg-panel2 px-2 py-0.5 text-[10px] text-faint">
           spread {fmtPrice(spread)} ({spreadPct.toFixed(3)}%)
         </span>
       </div>

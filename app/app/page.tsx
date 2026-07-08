@@ -9,6 +9,9 @@ import TradesFeed from "@/components/TradesFeed";
 import OrderForm from "@/components/OrderForm";
 import BottomPanel from "@/components/BottomPanel";
 
+const card =
+  "min-h-0 overflow-hidden rounded-xl border border-line bg-panel shadow-card";
+
 export default function Terminal() {
   const startFeed = useTerminal((s) => s.startFeed);
 
@@ -17,23 +20,23 @@ export default function Terminal() {
   }, [startFeed]);
 
   return (
-    <div className="h-screen overflow-x-auto bg-bg text-ink">
-      <div className="flex h-full min-w-[1180px] flex-col">
+    <div className="h-screen overflow-x-auto bg-transparent text-ink">
+      <div className="flex h-full min-w-[1180px] flex-col gap-2 p-2">
         <TopBar />
-        <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_300px_300px] grid-rows-[minmax(0,1fr)_280px] gap-px bg-line">
-          <section className="min-h-0 bg-panel">
+        <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_300px_300px] grid-rows-[minmax(0,1fr)_280px] gap-2">
+          <section className={card}>
             <PriceChart />
           </section>
-          <section className="min-h-0 bg-panel">
+          <section className={card}>
             <OrderBook />
           </section>
-          <section className="row-span-2 min-h-0 bg-panel">
+          <section className={`${card} row-span-2`}>
             <OrderForm />
           </section>
-          <section className="min-h-0 bg-panel">
+          <section className={card}>
             <BottomPanel />
           </section>
-          <section className="min-h-0 bg-panel">
+          <section className={card}>
             <TradesFeed />
           </section>
         </main>

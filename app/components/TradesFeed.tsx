@@ -12,8 +12,9 @@ export default function TradesFeed() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-9 shrink-0 items-center border-b border-line px-3">
+      <div className="flex h-10 shrink-0 items-center border-b border-line px-4">
         <span className="text-xs font-semibold text-ink">Recent Trades</span>
+        <span className="ml-auto h-1.5 w-1.5 animate-pulse rounded-full bg-up" />
       </div>
 
       <div className="grid grid-cols-3 px-3 py-1.5 text-right text-[10px] uppercase tracking-wider text-faint">

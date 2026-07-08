@@ -5,62 +5,103 @@ import { fmtCompact, fmtPct, fmtPrice, shortAddress } from "@/lib/format";
 
 function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="hidden flex-col gap-0.5 lg:flex">
-      <span className="text-[11px] leading-none text-faint">{label}</span>
-      <span className="num text-xs leading-none text-ink">{children}</span>
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[10px] uppercase tracking-wider text-faint">{label}</span>
+      <span className="num text-xs font-medium text-ink">{children}</span>
     </div>
   );
 }
 
 export default function TopBar() {
   const market = useTerminal((s) => s.market);
+  const markets = useTerminal((s) => s.markets);
+  const selectedMarket = useTerminal((s) => s.selectedMarket);
+  const switchMarket = useTerminal((s) => s.switchMarket);
   const lastPrice = useTerminal((s) => s.lastPrice);
   const lastSide = useTerminal((s) => s.lastSide);
   const stats = useTerminal((s) => s.stats);
   const feedLive = useTerminal((s) => s.feedLive);
   const feedSource = useTerminal((s) => s.feedSource);
+  const fundingBps = useTerminal((s) => s.fundingBps);
   const wallet = useTerminal((s) => s.wallet);
   const connectWallet = useTerminal((s) => s.connectWallet);
   const disconnectWallet = useTerminal((s) => s.disconnectWallet);
 
   const changeColor = stats.change24h >= 0 ? "text-up" : "text-down";
+  const isPerp = market.symbol.endsWith("PERP");
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-6 border-b border-line bg-panel px-4">
-      <div className="flex items-center gap-2">
-        <div className="flex h-6 w-6 items-center justify-center rounded bg-accent/15 text-xs font-bold text-accent">
+    <header className="flex h-14 shrink-0 items-center gap-5 rounded-xl border border-line bg-panel px-4 shadow-card">
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-grad text-xs font-black text-white shadow-glow">
           M
         </div>
-        <span className="text-sm font-semibold tracking-wide">MATCHBOOK</span>
-        <span className="rounded bg-panel2 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted">
+        <span className="text-brand text-sm font-bold tracking-wide">MATCHBOOK</span>
+        <span className="rounded-md border border-line bg-panel2 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted">
           devnet
         </span>
       </div>
 
-      <div className="flex items-center gap-2 rounded-md bg-panel2 px-3 py-1.5">
-        <span className="text-sm font-semibold">{market.symbol}</span>
-        <span className="text-[10px] uppercase tracking-wider text-faint">spot</span>
+      {/* market switcher */}
+      <div className="flex items-center gap-1 rounded-lg border border-line bg-panel2 p-1">
+        {(markets.length > 0
+          ? markets
+          : [{ pubkey: "sim", kind: "spot" as const, symbol: market.symbol }]
+        ).map((m) => {
+          const active =
+            m.pubkey === selectedMarket || (markets.length === 0 && m.pubkey === "sim");
+          return (
+            <button
+              key={m.pubkey}
+              data-testid={`market-${m.symbol}`}
+              onClick={() => m.pubkey !== "sim" && switchMarket(m.pubkey)}
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
+                active ? "bg-panel3 text-ink shadow-card" : "text-muted hover:text-ink"
+              }`}
+            >
+              {m.symbol}
+              <span
+                className={`rounded px-1 text-[9px] font-bold uppercase tracking-wider ${
+                  m.kind === "perp" ? "bg-accent2/20 text-accent2" : "bg-accent/20 text-accent"
+                }`}
+              >
+                {m.kind}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      <div className={`num text-lg font-semibold leading-none ${lastSide === "buy" ? "text-up" : "text-down"}`}>
+      <div
+        className={`num text-lg font-semibold leading-none ${
+          lastSide === "buy" ? "text-up" : "text-down"
+        }`}
+      >
         {lastPrice ? fmtPrice(lastPrice) : "—"}
       </div>
 
-      <div className="flex items-center gap-6">
+      <div className="flex items-center gap-5">
         <Stat label="24h Change">
           <span className={changeColor}>{fmtPct(stats.change24h)}</span>
         </Stat>
         <Stat label="24h High">{fmtPrice(stats.high24h)}</Stat>
         <Stat label="24h Low">{fmtPrice(stats.low24h)}</Stat>
-        <Stat label={`24h Volume (${market.base})`}>{fmtCompact(stats.volumeBase)}</Stat>
-        <Stat label={`24h Volume (${market.quote})`}>{fmtCompact(stats.volumeQuote)}</Stat>
+        <Stat label={`24h Vol (${market.base})`}>{fmtCompact(stats.volumeBase)}</Stat>
+        <Stat label={`24h Vol (${market.quote})`}>{fmtCompact(stats.volumeQuote)}</Stat>
+        {isPerp && fundingBps !== null && (
+          <Stat label="Funding / day">
+            <span className={fundingBps >= 0 ? "text-up" : "text-down"}>
+              {(fundingBps / 100).toFixed(2)}%
+            </span>
+          </Stat>
+        )}
       </div>
 
       <div className="ml-auto flex items-center gap-3">
-        <span className="flex items-center gap-1.5 text-[11px] text-muted">
+        <span className="flex items-center gap-1.5 rounded-full border border-line bg-panel2 px-2.5 py-1 text-[11px] text-muted">
           <span
             className={`h-1.5 w-1.5 rounded-full ${
-              !feedLive ? "bg-faint" : feedSource === "indexer" ? "bg-up" : "bg-accent"
+              !feedLive ? "bg-faint" : feedSource === "indexer" ? "bg-up shadow-glow-up" : "bg-accent"
             }`}
           />
           {!feedLive ? "connecting" : feedSource === "indexer" ? "live" : "mock feed"}
@@ -69,7 +110,7 @@ export default function TopBar() {
           <button
             data-testid="wallet-address"
             onClick={disconnectWallet}
-            className="num rounded-md border border-line bg-panel2 px-3 py-1.5 text-xs text-ink transition-colors hover:border-down/60 hover:text-down"
+            className="num rounded-lg border border-line bg-panel2 px-3 py-1.5 text-xs text-ink transition-all hover:border-down/60 hover:text-down"
             title="Disconnect"
           >
             {shortAddress(wallet.address)}
@@ -78,7 +119,7 @@ export default function TopBar() {
           <button
             data-testid="connect-wallet"
             onClick={connectWallet}
-            className="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
+            className="rounded-lg bg-brand-grad px-3.5 py-1.5 text-xs font-semibold text-white transition-all hover:shadow-glow"
           >
             Connect Wallet
           </button>
