@@ -12,8 +12,8 @@ import {
 import { useTerminal } from "@/lib/store";
 import type { Candle } from "@/lib/types";
 
-const UP = "#26a69a";
-const DOWN = "#ef5350";
+const UP = "#2ebd85";
+const DOWN = "#f6465d";
 
 export default function PriceChart() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -29,21 +29,21 @@ export default function PriceChart() {
     const chart = createChart(el, {
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#8b98a5",
+        textColor: "#9aa8bc",
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: "#171c23" },
-        horzLines: { color: "#171c23" },
+        vertLines: { color: "#1f2838" },
+        horzLines: { color: "#1f2838" },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: "#5a6673", labelBackgroundColor: "#222933" },
-        horzLine: { color: "#5a6673", labelBackgroundColor: "#222933" },
+        vertLine: { color: "#6b7990", labelBackgroundColor: "#273246" },
+        horzLine: { color: "#6b7990", labelBackgroundColor: "#273246" },
       },
-      rightPriceScale: { borderColor: "#222933" },
+      rightPriceScale: { borderColor: "#2d3950" },
       timeScale: {
-        borderColor: "#222933",
+        borderColor: "#2d3950",
         timeVisible: true,
         secondsVisible: false,
       },
@@ -99,7 +99,7 @@ export default function PriceChart() {
     const toVol = (c: Candle) => ({
       time: c.time as UTCTimestamp,
       value: c.volume,
-      color: c.close >= c.open ? "rgba(38,166,154,0.35)" : "rgba(239,83,80,0.35)",
+      color: c.close >= c.open ? "rgba(46,189,133,0.35)" : "rgba(246,70,93,0.35)",
     });
 
     const apply = (candles: Candle[]) => {
