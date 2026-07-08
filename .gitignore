@@ -10,3 +10,4 @@ dist/
 app/.next/
 .test-build/
 app/e2e/*.png
+scripts/.perp-state.json
