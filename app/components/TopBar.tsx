@@ -24,6 +24,7 @@ export default function TopBar() {
   const feedSource = useTerminal((s) => s.feedSource);
   const fundingBps = useTerminal((s) => s.fundingBps);
   const wallet = useTerminal((s) => s.wallet);
+  const role = useTerminal((s) => s.role);
   const connectWallet = useTerminal((s) => s.connectWallet);
   const disconnectWallet = useTerminal((s) => s.disconnectWallet);
 
@@ -107,14 +108,29 @@ export default function TopBar() {
           {!feedLive ? "connecting" : feedSource === "indexer" ? "live" : "mock feed"}
         </span>
         {wallet.connected && wallet.address ? (
-          <button
-            data-testid="wallet-address"
-            onClick={disconnectWallet}
-            className="num rounded-lg border border-line bg-panel2 px-3 py-1.5 text-xs text-ink transition-all hover:border-down/60 hover:text-down"
-            title="Disconnect"
-          >
-            {shortAddress(wallet.address)}
-          </button>
+          <div className="flex items-center gap-2">
+            <span
+              data-testid="role-badge"
+              title="Role derived from on-chain state: the perp market's admin is the operator"
+              className={`rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                role === "operator"
+                  ? "bg-accent2/20 text-accent2"
+                  : role === "trader"
+                    ? "bg-accent/15 text-accent"
+                    : "bg-panel2 text-muted"
+              }`}
+            >
+              {role}
+            </span>
+            <button
+              data-testid="wallet-address"
+              onClick={disconnectWallet}
+              className="num rounded-lg border border-line bg-panel2 px-3 py-1.5 text-xs text-ink transition-all hover:border-down/60 hover:text-down"
+              title="Disconnect"
+            >
+              {shortAddress(wallet.address)}
+            </button>
+          </div>
         ) : (
           <button
             data-testid="connect-wallet"

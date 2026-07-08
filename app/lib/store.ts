@@ -2,6 +2,7 @@ import { create } from "zustand";
 // Type-only: the real module (and its heavy anchor/web3 deps) loads
 // lazily on wallet connect, keeping it out of the initial bundle.
 import type { ChainClient, PerpClient } from "./chain";
+import type { Role } from "./roles";
 import { INDEXER_HTTP, IndexerFeed } from "./indexer";
 import { MockFeed } from "./mock";
 import type {
@@ -76,6 +77,12 @@ interface TerminalState {
   wallet: { connected: boolean; address: string | null };
   /** true when orders are real signed transactions (burner wallet + validator) */
   tradingLive: boolean;
+  /** guest browsing: past the login screen without a wallet, read-only */
+  guest: boolean;
+  /** on-chain derived role — see lib/roles.ts */
+  role: Role;
+  /** the perp market operator's address (oracle keeper), for display */
+  perpAdmin: string | null;
   balances: Record<string, Balance>;
   openOrders: OpenOrder[];
   fills: Fill[];
@@ -88,6 +95,7 @@ interface TerminalState {
 
   startFeed: () => void;
   switchMarket: (pubkey: string) => void;
+  enterAsGuest: () => void;
   connectWallet: () => void;
   disconnectWallet: () => void;
   quotePrice: (price: number) => void;
@@ -126,6 +134,9 @@ export const useTerminal = create<TerminalState>((set, get) => ({
 
   wallet: { connected: false, address: null },
   tradingLive: false,
+  guest: false,
+  role: "viewer",
+  perpAdmin: null,
   balances: { ...SIM_BALANCES },
   openOrders: [],
   fills: [],
@@ -179,11 +190,13 @@ export const useTerminal = create<TerminalState>((set, get) => ({
       .catch((err) => console.error("market switch failed:", err));
   },
 
+  enterAsGuest: () => set({ guest: true, role: "viewer" }),
+
   connectWallet: () => {
     if (feed instanceof IndexerFeed) {
       connectChain(set, get);
     } else {
-      set({ wallet: { connected: true, address: SIM_ADDRESS } });
+      set({ wallet: { connected: true, address: SIM_ADDRESS }, role: "trader" });
     }
   },
 
@@ -194,6 +207,9 @@ export const useTerminal = create<TerminalState>((set, get) => ({
     set({
       wallet: { connected: false, address: null },
       tradingLive: false,
+      guest: false,
+      role: "viewer",
+      perpAdmin: null,
       openOrders: [],
       fills: [],
       position: null,
@@ -410,15 +426,28 @@ function connectChain(set: Set, get: Get) {
       set(() => ({
         wallet: { connected: true, address },
         tradingLive: true,
+        role: "trader", // optimistic; refined by the on-chain resolution below
         openOrders: [],
         fills: [],
       }));
       startChainPolling(set, get);
+      resolveRoleInBackground(set, get, address);
     })
     .catch((err) => {
       console.error("on-chain wallet unavailable, using simulator:", err);
-      set(() => ({ wallet: { connected: true, address: SIM_ADDRESS } }));
+      set(() => ({ wallet: { connected: true, address: SIM_ADDRESS }, role: "trader" }));
     });
+}
+
+/** RBAC: derive the wallet's role from on-chain state, off the hot path. */
+function resolveRoleInBackground(set: Set, get: Get, address: string) {
+  const markets = get().markets;
+  const perpPk = markets.find((m) => m.kind === "perp")?.pubkey;
+  const spotPk = markets.find((m) => m.kind === "spot")?.pubkey;
+  import("./roles")
+    .then(({ resolveRole }) => resolveRole(address, { perp: perpPk, spot: spotPk }))
+    .then((info) => set(() => ({ role: info.role, perpAdmin: info.perpAdmin })))
+    .catch((err) => console.error("role resolution failed:", err));
 }
 
 function startChainPolling(set: Set, get: Get) {

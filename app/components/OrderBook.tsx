@@ -1,7 +1,7 @@
 "use client";
 
 import { useTerminal } from "@/lib/store";
-import { fmtPrice, fmtSize } from "@/lib/format";
+import { fmtPrice, fmtSize, shortAddress } from "@/lib/format";
 import type { BookLevel, Side } from "@/lib/types";
 
 const ROWS = 11;
@@ -18,7 +18,7 @@ function BookRow({
   onClick: () => void;
 }) {
   const depthPct = Math.min(100, (level.total / maxTotal) * 100);
-  const barColor = side === "buy" ? "rgba(38,166,154,0.10)" : "rgba(239,83,80,0.10)";
+  const barColor = side === "buy" ? "rgba(46,189,133,0.14)" : "rgba(246,70,93,0.14)";
   return (
     <button
       onClick={onClick}
@@ -47,6 +47,8 @@ export default function OrderBook() {
   const quotePrice = useTerminal((s) => s.quotePrice);
   const fundingBps = useTerminal((s) => s.fundingBps);
   const position = useTerminal((s) => s.position);
+  const perpAdmin = useTerminal((s) => s.perpAdmin);
+  const role = useTerminal((s) => s.role);
 
   // Perps have no resting book — fills execute against the oracle.
   if (market.symbol.endsWith("PERP")) {
@@ -94,6 +96,19 @@ export default function OrderBook() {
                 {position.size > 0 ? "+" : ""}
                 {fmtSize(position.size)} SOL
               </p>
+            </div>
+          )}
+          {perpAdmin && (
+            <div className="flex w-full items-center justify-between rounded-xl border border-line bg-panel2/60 px-3 py-2">
+              <span className="text-[10px] uppercase tracking-wider text-faint">Operator</span>
+              <span className="num text-[11px] text-muted">
+                {shortAddress(perpAdmin)}
+                {role === "operator" && (
+                  <span className="ml-1.5 rounded bg-accent2/20 px-1 text-[9px] font-bold uppercase text-accent2">
+                    you
+                  </span>
+                )}
+              </span>
             </div>
           )}
           <p className="text-center text-[10px] leading-relaxed text-faint">

@@ -85,6 +85,13 @@ from the on-chain `OpenOrders` account, orders and fills from the
 indexer. The signer sits behind a wallet-adapter-shaped interface, so a
 browser-extension wallet is a drop-in for devnet later.
 
+The terminal opens on a login screen: connect the wallet or explore as
+a read-only guest. Roles are derived from on-chain state in one batched
+`getMultipleAccounts` call (`app/lib/roles.ts`) — the perp market's
+admin is the **operator**, a connected wallet is a **trader**, guests
+are **viewers**; the top bar shows the resolved role and operator-only
+surfaces render for the operator wallet alone.
+
 The terminal lists both markets — the spot book and SOL-PERP — behind
 a switcher in the top bar. In perp mode the ticket goes Long/Short with
 margin math, the book panel becomes an oracle/funding readout, and the

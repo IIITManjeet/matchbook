@@ -8,16 +8,23 @@ import OrderBook from "@/components/OrderBook";
 import TradesFeed from "@/components/TradesFeed";
 import OrderForm from "@/components/OrderForm";
 import BottomPanel from "@/components/BottomPanel";
+import ConnectScreen from "@/components/ConnectScreen";
 
 const card =
   "min-h-0 overflow-hidden rounded-xl border border-line bg-panel shadow-card";
 
 export default function Terminal() {
   const startFeed = useTerminal((s) => s.startFeed);
+  const connected = useTerminal((s) => s.wallet.connected);
+  const guest = useTerminal((s) => s.guest);
 
   useEffect(() => {
     startFeed();
   }, [startFeed]);
+
+  // Login gate: wallet or explicit guest entry. Market data starts
+  // loading behind the screen either way.
+  if (!connected && !guest) return <ConnectScreen />;
 
   return (
     <div className="h-screen overflow-x-auto bg-transparent text-ink">

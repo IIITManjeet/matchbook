@@ -51,19 +51,23 @@ try {
   page.on("pageerror", (e) => pageErrors.push(String(e)));
 
   await page.goto(URL, { waitUntil: "networkidle2", timeout: 60_000 });
-  await page.waitForSelector('button[title^="Set limit price"]', { timeout: 30_000 });
 
-  console.log("live feed required");
-  await page.waitForFunction(() => document.body.innerText.includes("live"), { timeout: 15_000 });
-  check(true, "terminal is on the indexer feed");
+  console.log("login screen gates the terminal");
+  await page.waitForSelector('[data-testid="connect-wallet"]', { timeout: 30_000 });
+  check(true, "login screen shown");
 
   console.log("connect real wallet");
   await page.click('[data-testid="connect-wallet"]');
   await page.waitForFunction(
     () => document.querySelector('[data-testid="wallet-address"]')?.textContent?.includes("Kfq"),
-    { timeout: 20_000 },
+    { timeout: 25_000 },
   );
   check(true, "burner wallet connected (KfqT…)");
+
+  console.log("live feed required");
+  await page.waitForSelector('button[title^="Set limit price"]', { timeout: 30_000 });
+  await page.waitForFunction(() => document.body.innerText.includes("live"), { timeout: 15_000 });
+  check(true, "terminal is on the indexer feed");
 
   console.log("real balances from the OpenOrders account");
   await page.click('[data-testid="tab-balances"]');
@@ -85,6 +89,41 @@ try {
     await page.type(sel, text);
   };
 
+  /** locked-USDC cell of the balances table (accounts may carry state
+   *  from earlier sessions, so assertions below are deltas, not absolutes) */
+  const lockedUsdc = async () => {
+    await page.click('[data-testid="tab-balances"]');
+    return page.evaluate(() => {
+      const rows = Array.from(document.querySelectorAll("tbody tr"));
+      const r = rows.find((x) => x.cells[0]?.textContent?.trim() === "USDC");
+      return r ? parseFloat(r.cells[2].textContent.replace(/,/g, "")) : NaN;
+    });
+  };
+
+  console.log("clean up any resting orders from earlier sessions");
+  await page.click('[data-testid="tab-orders"]');
+  for (let i = 0; i < 12; i++) {
+    const n = await page.$$eval('[data-testid="open-order-row"]', (els) => els.length);
+    if (n === 0) break;
+    await page.click('[data-testid="cancel-order"]');
+    await page.waitForFunction(
+      (prev) => document.querySelectorAll('[data-testid="open-order-row"]').length < prev,
+      { timeout: 20_000 },
+      n,
+    );
+  }
+  check(true, "order book state reset for this wallet");
+
+  // let the 2s balance poll settle after the cancels: two consecutive
+  // equal readings means the panel reflects the chain
+  let lockedBefore = await lockedUsdc();
+  for (let i = 0; i < 10; i++) {
+    await new Promise((r) => setTimeout(r, 2500));
+    const next = await lockedUsdc();
+    if (next === lockedBefore) break;
+    lockedBefore = next;
+  }
+
   console.log("rest a real limit bid at 45.00");
   await page.click('[data-testid="type-limit"]');
   await replaceValue('[data-testid="input-price"]', "45");
@@ -101,9 +140,15 @@ try {
   check(true, "order resting on-chain, reported back by the indexer");
 
   console.log("balances reflect the on-chain lock");
-  await page.click('[data-testid="tab-balances"]');
-  await page.waitForFunction(() => document.body.innerText.includes("22.50"), { timeout: 15_000 });
-  check(true, "22.50 USDC locked behind the resting bid (45.00 × 0.5)");
+  let lockedAfter = NaN;
+  for (let i = 0; i < 10 && !(Math.abs(lockedAfter - (lockedBefore + 22.5)) < 0.01); i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    lockedAfter = await lockedUsdc();
+  }
+  check(
+    Math.abs(lockedAfter - (lockedBefore + 22.5)) < 0.01,
+    `locked USDC rose by exactly 22.50 (${lockedBefore} → ${lockedAfter})`,
+  );
 
   console.log("cancel it on-chain");
   await page.click('[data-testid="tab-orders"]');

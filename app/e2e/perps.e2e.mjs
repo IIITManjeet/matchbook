@@ -27,6 +27,15 @@ const check = (c, name) => {
 };
 
 await page.goto(URL, { waitUntil: "networkidle2", timeout: 60_000 });
+
+console.log("login: connect wallet from the gate");
+await page.waitForSelector('[data-testid="connect-wallet"]', { timeout: 30_000 });
+await page.click('[data-testid="connect-wallet"]');
+await page.waitForFunction(
+  () => document.querySelector('[data-testid="wallet-address"]')?.textContent?.includes("Kfq"),
+  { timeout: 25_000 },
+);
+check(true, "logged in with the burner wallet");
 await page.waitForFunction(() => document.body.innerText.includes("live"), { timeout: 20_000 });
 await page.screenshot({ path: `${OUT}/perp-0-spot-restyled.png` });
 
@@ -42,19 +51,22 @@ await page.waitForFunction(
 );
 check(true, "perp market selected: oracle panel showing");
 
-console.log("connect wallet on perp");
-await page.click('[data-testid="connect-wallet"]');
+console.log("margin state on perp");
+// on-chain trading must be live and the margin panel populated (the
+// exact balance depends on prior sessions' fees/PnL, so no fixed value)
 await page.waitForFunction(
-  () => document.querySelector('[data-testid="wallet-address"]')?.textContent?.includes("Kfq"),
-  { timeout: 25_000 },
-);
-// wait for margin state to arrive (10k collateral from the keeper)
-await page.click('[data-testid="tab-balances"]');
-await page.waitForFunction(
-  () => /(?:9,9\d\d|10,000)\.\d\d/.test(document.body.innerText),
+  () => document.body.innerText.toLowerCase().includes("signed and placed on-chain"),
   { timeout: 20_000 },
 );
-check(true, "margin account shows ~10k USDC collateral from the keeper");
+await page.click('[data-testid="tab-balances"]');
+await page.waitForFunction(
+  () => {
+    const t = document.body.innerText.toLowerCase();
+    return t.includes("free collateral") && /\d+\.\d\d/.test(t);
+  },
+  { timeout: 20_000 },
+);
+check(true, "on-chain margin account loaded (collateral panel populated)");
 
 console.log("open a 1 SOL long");
 await page.click('[data-testid="side-buy"]');

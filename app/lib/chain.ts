@@ -21,6 +21,16 @@ import type { PerpPosition, Side } from "./types";
 const TOKEN_PROGRAM = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 const ATA_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
+/**
+ * One RPC connection for the whole app. Every client and the role
+ * resolver share it — no per-client sockets, one keep-alive pool.
+ */
+let sharedConnection: Connection | null = null;
+export function getConnection(): Connection {
+  if (!sharedConnection) sharedConnection = new Connection(RPC_URL, "confirmed");
+  return sharedConnection;
+}
+
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? "http://127.0.0.1:8899";
 
 export interface MarketMeta {
@@ -86,7 +96,7 @@ export class ChainClient {
 
   /** Connect the burner wallet and make sure it can pay fees + trade. */
   static async connect(meta: MarketMeta): Promise<ChainClient> {
-    const connection = new Connection(RPC_URL, "confirmed");
+    const connection = getConnection();
     const client = new ChainClient(meta, burnerWallet(), connection);
 
     const lamports = await connection.getBalance(client.program.provider.publicKey!);
@@ -239,7 +249,7 @@ export class PerpClient {
   }
 
   static async connect(marketPubkey: string): Promise<PerpClient> {
-    const connection = new Connection(RPC_URL, "confirmed");
+    const connection = getConnection();
     const client = new PerpClient(marketPubkey, burnerWallet(), connection);
 
     const mkt = await client.perpMarket();
@@ -284,12 +294,23 @@ export class PerpClient {
     )[0];
   }
 
-  /** Full mark-to-market view in UI units (SOL / USDC floats). */
+  /**
+   * Full mark-to-market view in UI units (SOL / USDC floats).
+   *
+   * One batched `getMultipleAccounts` instead of two account fetches —
+   * this runs on a 2s poll, so halving the round-trips matters, and
+   * both accounts come from the same slot (consistent snapshot).
+   */
   async state(): Promise<PerpPosition> {
-    const [mkt, ma] = await Promise.all([
-      this.perpMarket(),
-      this.accounts().marginAccount.fetch(this.marginAccount),
+    const infos = await this.program.provider.connection.getMultipleAccountsInfo([
+      this.market,
+      this.marginAccount,
     ]);
+    if (!infos[0] || !infos[1]) throw new Error("perp accounts missing");
+    // anchor's account coder keys by camelCased idl name
+    const coder = this.program.coder.accounts;
+    const mkt = coder.decode<PerpMarketAccount>("perpMarket", infos[0].data);
+    const ma = coder.decode<MarginAccountData>("marginAccount", infos[1].data);
     const mark = Number(mkt.oraclePrice.toString()) / 1e6;
     const size = Number(ma.basePosition.toString()) / 1e9;
     const entry = Number(ma.avgEntryPrice.toString()) / 1e6;
