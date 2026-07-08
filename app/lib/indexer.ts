@@ -24,6 +24,7 @@ interface IndexerMarket {
   quote_mint: string;
   tick_size: number;
   base_lot_size: number;
+  kind: "spot" | "perp";
 }
 
 // ── Pure unit conversion (exported for tests) ──────────────────────────
@@ -150,20 +151,25 @@ export class IndexerFeed {
   }
 
   /**
-   * Probe the indexer and pick the most recently created market.
-   * Throws when the indexer is down or empty — callers fall back to
-   * the mock feed.
+   * Probe the indexer and pick a market: an explicit `target` pubkey,
+   * else the most recently created spot market. Throws when the
+   * indexer is down or empty — callers fall back to the mock feed.
    */
-  static async connect(): Promise<IndexerFeed> {
-    const res = await fetch(`${HTTP_URL}/markets`, { signal: AbortSignal.timeout(2500) });
-    if (!res.ok) throw new Error(`indexer /markets: ${res.status}`);
-    const markets: IndexerMarket[] = await res.json();
-    const preferred = process.env.NEXT_PUBLIC_MARKET;
+  static async connect(target?: string): Promise<IndexerFeed> {
+    const markets = await IndexerFeed.listMarkets();
+    const preferred = target ?? process.env.NEXT_PUBLIC_MARKET;
+    const spots = markets.filter((m) => m.kind !== "perp");
     const market = preferred
       ? markets.find((m) => m.pubkey === preferred)
-      : markets[markets.length - 1]; // newest
+      : spots[spots.length - 1] ?? markets[markets.length - 1];
     if (!market) throw new Error("indexer has no markets");
     return new IndexerFeed(market);
+  }
+
+  static async listMarkets(): Promise<IndexerMarket[]> {
+    const res = await fetch(`${HTTP_URL}/markets`, { signal: AbortSignal.timeout(2500) });
+    if (!res.ok) throw new Error(`indexer /markets: ${res.status}`);
+    return res.json();
   }
 
   get marketPubkey() {
@@ -179,6 +185,10 @@ export class IndexerFeed {
       baseDecimals: BASE_DECIMALS,
       quoteDecimals: QUOTE_DECIMALS,
     };
+  }
+
+  get kind(): "spot" | "perp" {
+    return this.market.kind;
   }
 
   get converter(): Converter {
@@ -247,7 +257,9 @@ export class IndexerFeed {
     const ws = new WebSocket(wsUrl);
     this.ws = ws;
     ws.onopen = () => {
-      for (const channel of ["trades", "book"]) {
+      const channels =
+        this.market.kind === "perp" ? ["trades", "mark", "funding"] : ["trades", "book"];
+      for (const channel of channels) {
         ws.send(JSON.stringify({ op: "subscribe", channel, market: this.market.pubkey }));
       }
     };
@@ -266,6 +278,12 @@ export class IndexerFeed {
       } else {
         this.book.applyDelta(msg.data.levels as { side: number; price: number; qty: number }[]);
       }
+    } else if (msg.channel === "mark") {
+      // Oracle tick: moves the perp chart and last price without a trade.
+      const d = msg.data as { price: number; ts: string };
+      const price = this.conv.priceToUi(d.price);
+      this.lastPrice = price;
+      updateCandles(this.candles, price, 0, Date.parse(d.ts) || Date.now());
     } else if (msg.channel === "trades") {
       const d = msg.data as { price: number; qty: number; taker_side: number; ts: string };
       const trade: Trade = {

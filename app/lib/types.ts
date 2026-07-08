@@ -73,6 +73,31 @@ export interface Balance {
   locked: number;
 }
 
+export interface MarketListing {
+  pubkey: string;
+  kind: "spot" | "perp";
+  symbol: string;
+}
+
+/** Everything the positions panel shows, in UI units (SOL / USDC). */
+export interface PerpPosition {
+  /** signed; + long, − short */
+  size: number;
+  entryPrice: number;
+  markPrice: number;
+  notional: number;
+  uPnl: number;
+  uPnlPct: number;
+  /** null when the position can't be liquidated at any price */
+  liqPrice: number | null;
+  /** unsettled funding; positive = this account pays */
+  pendingFunding: number;
+  collateral: number;
+  equity: number;
+  freeCollateral: number;
+  leverage: number;
+}
+
 export interface FeedSnapshot {
   bids: BookLevel[];
   asks: BookLevel[];
