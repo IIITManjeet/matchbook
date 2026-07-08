@@ -4,6 +4,13 @@ A central limit orderbook DEX on Solana — a matching engine and an order
 book in one word. Built as a deep-dive into Anchor and on-chain systems
 design. Spot markets first, perpetual futures later.
 
+**Live demo:** the terminal is published at
+<https://iiitmanjeet.github.io/matchbook/> (static export via GitHub
+Pages). Without a publicly hosted indexer it runs on the built-in
+simulator feed — the full live-data stack (validator + indexer +
+keepers) runs locally per the instructions below. The program is also
+deployed to **devnet** under the same program ID.
+
 **Program ID (devnet/localnet):** `9bezj1VAw4gTMKonswkKioRdsttD4UowXh87Fcw9Wtr2`
 
 ## Layout
