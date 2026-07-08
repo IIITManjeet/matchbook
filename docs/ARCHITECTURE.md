@@ -105,11 +105,52 @@ terminal where color is information.
 - **Keyboard-first:** ⌘K command palette (switch market, place order),
   hotkeys on the ticket. It should feel like software for professionals.
 
+## Perpetual futures (M4 — implemented)
+
+Perps live in the same program as the spot CLOB but trade differently:
+positions fill against an **oracle price**, not an orderbook. That keeps
+M4's lessons — margin, funding, liquidation — front and center instead
+of duplicating the matching engine.
+
+- **Oracle.** A keeper-pushed price on the `PerpMarket` account, gated
+  to the market admin, with a 60-second freshness rule enforced on every
+  trade. The field layout (price + publish time) deliberately mirrors a
+  Pyth price account so devnet integration is a account-read swap, not a
+  redesign.
+- **Margin accounts.** One `MarginAccount` PDA per (wallet, market):
+  collateral, one net position, volume-weighted entry. Unrealized PnL
+  and unsettled funding are always *derived* — every mutating
+  instruction starts by settling funding into collateral, which makes
+  the margin checks single-source-of-truth.
+- **Netting.** `open_position(delta)` covers open/add/reduce/close/flip.
+  Extending moves the VWAP entry; reducing realizes PnL on the closed
+  portion; flipping realizes everything and opens the remainder fresh.
+  The result must clear *initial* margin (10x default); withdrawals must
+  too, so no instruction can leave an account at the edge.
+- **Funding from skew.** A permissionless crank accrues a premium
+  (bps/day, capped) proportional to open-interest imbalance into a
+  lifetime accumulator; positions settle `pos × Δaccumulator`. Crowded
+  longs pay shorts, pushing the book back toward balance. Accrual is
+  pro-rata in elapsed time, so cranker reliability changes granularity,
+  never totals.
+- **Liquidation.** Anyone may close an account below maintenance margin
+  (5% default) at the oracle price. The penalty (2.5% of closed
+  notional, capped by remaining collateral) splits half to the
+  liquidator, half to the protocol. Losses beyond collateral are
+  clamped — a real venue socializes bad debt via an insurance fund;
+  here the clamp is documented and deliberate.
+- **Off-chain.** `scripts/perp-keeper.mjs` is oracle pusher, funding
+  cranker and liquidator bot in one loop, doing the same equity math as
+  the on-chain check. The indexer normalizes perp events into the spot
+  tick/lot scheme on ingest, so candles, trades and the terminal's unit
+  conversion work unchanged; oracle ticks drive zero-volume candles so
+  the chart moves even when nobody trades.
+
 ## Milestones as a learning map
 
 | Milestone | Anchor/Solana concepts it forces you to learn |
 |---|---|
 | M1 (done) | PDAs & seeds, account constraints (`has_one`, custom), CPIs to the token program, PDA signing, zero-copy accounts, events, rent/space |
 | M2 (done) | event queues & cranks, `remaining_accounts`, the 10,240-byte CPI-init account cap, compute-budget guards (fill cap), fee accounting. Open stretch: crit-bit slab |
-| M3 | log subscription & event decoding, IDL-driven clients, transaction building on the frontend, priority fees |
-| M4 | oracle (Pyth) accounts, i80f48-style fixed point, cross-instruction invariants, liquidation game theory, security review |
+| M3 (done) | log subscription & event decoding, IDL-driven clients, transaction building on the frontend, priority fees |
+| M4 (done) | oracle accounts & freshness rules, i128 fixed-point margin math, cross-instruction invariants (settle-funding-first), liquidation incentives, keeper/liquidator bots |

@@ -53,12 +53,16 @@ cargo test            # event decoding + book reconstruction unit tests
 
 See [indexer/README.md](indexer/README.md) for the API and design notes.
 
-To generate localnet activity (fresh market, resting grid, streaming
-trades) for the indexer and terminal to display:
+To generate localnet activity for the indexer and terminal to display:
 
 ```powershell
-node scripts/seed-market.mjs 5   # trade for 5 minutes
+node scripts/seed-market.mjs 5   # spot: fresh market, resting grid, 5 min of trades
+node scripts/perp-keeper.mjs 10  # perps: oracle pusher + funding crank + liquidator bot
 ```
+
+The keeper creates the SOL-PERP market on first run, funds the
+terminal's burner wallet with 10k USDC of margin, then streams oracle
+prices, turns the funding crank and liquidates underwater accounts.
 
 ## Trading terminal
 
@@ -81,8 +85,15 @@ from the on-chain `OpenOrders` account, orders and fills from the
 indexer. The signer sits behind a wallet-adapter-shaped interface, so a
 browser-extension wallet is a drop-in for devnet later.
 
+The terminal lists both markets — the spot book and SOL-PERP — behind
+a switcher in the top bar. In perp mode the ticket goes Long/Short with
+margin math, the book panel becomes an oracle/funding readout, and the
+bottom strip shows the live position (entry, mark, uPnL, liquidation
+price, pending funding) plus collateral deposit/withdraw.
+
 ```bash
-npm run test:e2e:sign  # e2e: connect → rest bid → verify lock → cancel → market buy
+npm run test:e2e:sign   # e2e: connect → rest bid → verify lock → cancel → market buy
+npm run test:e2e:perps  # e2e: switch to SOL-PERP → long → verify position → close
 ```
 
 ## Roadmap
@@ -101,7 +112,14 @@ npm run test:e2e:sign  # e2e: connect → rest bid → verify lock → cancel �
       localnet burner wallet — placement, cancels, locks and fills all
       verified end-to-end. Devnet polish left: browser-extension
       wallets via the adapter interface.
-- [ ] **M4 — Perps**: Pyth oracle integration, margin accounts, funding
-      rate, liquidation instruction + liquidator bot.
+- [x] **M4 — Perps**: SOL-PERP margined in USDC. Positions fill against
+      a keeper-pushed oracle (Pyth-shaped, freshness-enforced); margin
+      accounts net one position with VWAP entry and settle-funding-first
+      invariants; funding accrues from open-interest skew via a
+      permissionless crank; anyone can liquidate below maintenance for
+      half the penalty. Keeper + liquidator bot in `scripts/`, perp
+      trading UI with positions, collateral management and a market
+      switcher in the terminal. Devnet polish left: real Pyth account +
+      extension wallets.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
