@@ -84,4 +84,71 @@ pub mod clob {
     pub fn cancel_order(ctx: Context<CancelOrder>, side: Side, order_id: u64) -> Result<()> {
         instructions::cancel_order::handler(ctx, side, order_id)
     }
+
+    // ── M4: perpetual futures ──────────────────────────────────────────
+
+    /// Create a perp market margined in `collateral_mint`, its vault,
+    /// and register the payer as admin / oracle keeper.
+    #[allow(clippy::too_many_arguments)]
+    pub fn init_perp_market(
+        ctx: Context<InitPerpMarket>,
+        oracle_price: u64,
+        funding_interval: i64,
+        max_funding_bps: u16,
+        taker_fee_bps: u16,
+        init_margin_bps: u16,
+        maint_margin_bps: u16,
+        liq_fee_bps: u16,
+    ) -> Result<()> {
+        instructions::init_perp_market::handler(
+            ctx,
+            oracle_price,
+            funding_interval,
+            max_funding_bps,
+            taker_fee_bps,
+            init_margin_bps,
+            maint_margin_bps,
+            liq_fee_bps,
+        )
+    }
+
+    /// Keeper-pushed oracle price (admin only). Pyth replaces this on
+    /// devnet — same freshness rule, different account to read.
+    pub fn set_oracle_price(ctx: Context<SetOraclePrice>, price: u64) -> Result<()> {
+        instructions::set_oracle_price::handler(ctx, price)
+    }
+
+    /// Create the caller's margin account for a perp market.
+    pub fn create_margin_account(ctx: Context<CreateMarginAccount>) -> Result<()> {
+        instructions::create_margin_account::handler(ctx)
+    }
+
+    /// Move collateral tokens into the perp vault.
+    pub fn deposit_collateral(ctx: Context<DepositCollateral>, amount: u64) -> Result<()> {
+        instructions::collateral::deposit_handler(ctx, amount)
+    }
+
+    /// Withdraw free collateral; the remaining position must still
+    /// clear initial margin at the current oracle price.
+    pub fn withdraw_collateral(ctx: Context<WithdrawCollateral>, amount: u64) -> Result<()> {
+        instructions::collateral::withdraw_handler(ctx, amount)
+    }
+
+    /// Trade `delta` base atoms (+ long, − short) against the oracle
+    /// price, netting into the caller's existing position.
+    pub fn open_position(ctx: Context<OpenPosition>, delta: i64, price_limit: u64) -> Result<()> {
+        instructions::open_position::handler(ctx, delta, price_limit)
+    }
+
+    /// Permissionless funding crank: accrue the skew-derived premium
+    /// into the market's cumulative funding index.
+    pub fn update_funding(ctx: Context<UpdateFunding>) -> Result<()> {
+        instructions::update_funding::handler(ctx)
+    }
+
+    /// Permissionless liquidation of any account below maintenance
+    /// margin; the liquidator earns half the penalty.
+    pub fn liquidate(ctx: Context<Liquidate>) -> Result<()> {
+        instructions::liquidate::handler(ctx)
+    }
 }

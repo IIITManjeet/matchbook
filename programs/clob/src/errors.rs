@@ -24,4 +24,18 @@ pub enum ClobError {
     SelfTrade,
     #[msg("Event queue is full — run the consume_events crank")]
     EventQueueFull,
+    #[msg("Perp market parameters are invalid")]
+    InvalidPerpParams,
+    #[msg("Oracle price is stale — the keeper must push a fresh price")]
+    OracleStale,
+    #[msg("Oracle price moved beyond the order's slippage limit")]
+    PriceSlippage,
+    #[msg("Position would fall below initial margin")]
+    BelowInitialMargin,
+    #[msg("Account is above maintenance margin — not liquidatable")]
+    NotLiquidatable,
+    #[msg("No position to act on")]
+    NoPosition,
+    #[msg("Funding was updated too recently")]
+    FundingTooSoon,
 }

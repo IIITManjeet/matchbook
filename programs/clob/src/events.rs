@@ -72,3 +72,74 @@ pub struct EventsConsumed {
     /// Number of fill events settled by this crank turn.
     pub count: u64,
 }
+
+// ── M4: perps ──────────────────────────────────────────────────────────
+
+#[event]
+pub struct PerpMarketInitialized {
+    pub market: Pubkey,
+    pub collateral_mint: Pubkey,
+    /// Quote atoms per whole base unit.
+    pub oracle_price: u64,
+    pub taker_fee_bps: u16,
+    pub init_margin_bps: u16,
+    pub maint_margin_bps: u16,
+    pub max_funding_bps: u16,
+}
+
+#[event]
+pub struct OraclePriceSet {
+    pub market: Pubkey,
+    pub price: u64,
+    pub ts: i64,
+}
+
+#[event]
+pub struct CollateralDeposited {
+    pub market: Pubkey,
+    pub owner: Pubkey,
+    pub amount: u64,
+}
+
+#[event]
+pub struct CollateralWithdrawn {
+    pub market: Pubkey,
+    pub owner: Pubkey,
+    pub amount: u64,
+}
+
+#[event]
+pub struct PerpPositionChanged {
+    pub market: Pubkey,
+    pub owner: Pubkey,
+    /// Signed trade size in base atoms (+ long, − short).
+    pub delta: i64,
+    /// Fill price (the oracle price), quote atoms per whole base unit.
+    pub price: u64,
+    pub fee: u64,
+    /// PnL realized by any reduced/closed portion, quote atoms.
+    pub realized_pnl: i64,
+    pub base_position_after: i64,
+    pub collateral_after: u64,
+}
+
+#[event]
+pub struct FundingUpdated {
+    pub market: Pubkey,
+    /// Skew-derived premium in bps/day at crank time.
+    pub premium_bps: i64,
+    /// Lifetime accumulator, quote atoms per whole base unit.
+    pub cum_funding: i128,
+    pub ts: i64,
+}
+
+#[event]
+pub struct PositionLiquidated {
+    pub market: Pubkey,
+    pub owner: Pubkey,
+    pub liquidator: Pubkey,
+    /// Base atoms closed (signed, the position that was wiped).
+    pub size_closed: i64,
+    pub price: u64,
+    pub penalty: u64,
+}
