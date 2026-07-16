@@ -32,6 +32,13 @@ jobs:
         env:
           EXPORT: "1"
           NEXT_PUBLIC_BASE_PATH: /matchbook
+          # Public endpoints for the live feed. Set these as repo variables
+          # (Settings → Secrets and variables → Actions → Variables):
+          #   NEXT_PUBLIC_INDEXER_URL  https://<your-fly-app>.fly.dev
+          #   NEXT_PUBLIC_RPC_URL      https://api.devnet.solana.com (default)
+          # If NEXT_PUBLIC_INDEXER_URL is unset the terminal shows the mock feed.
+          NEXT_PUBLIC_RPC_URL: ${{ vars.NEXT_PUBLIC_RPC_URL || 'https://api.devnet.solana.com' }}
+          NEXT_PUBLIC_INDEXER_URL: ${{ vars.NEXT_PUBLIC_INDEXER_URL }}
         run: |
           npm ci
           npx next build

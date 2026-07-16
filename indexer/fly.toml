@@ -1,0 +1,30 @@
+# Fly.io config for the CLOB indexer.
+# `fly launch --no-deploy` will set `app`/`primary_region` for you, or edit
+# them here. DATABASE_URL is injected by `fly postgres attach` (a secret) —
+# do NOT put it in [env].
+app = "matchbook-idx"
+primary_region = "iad"
+
+[build]
+
+[env]
+  LISTEN_ADDR = "0.0.0.0:8080"
+  RPC_HTTP = "https://api.devnet.solana.com"
+  RPC_WS = "wss://api.devnet.solana.com"
+  PROGRAM_ID = "9bezj1VAw4gTMKonswkKioRdsttD4UowXh87Fcw9Wtr2"
+  RUST_LOG = "info,clob_indexer=debug"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # The indexer must keep tailing program logs, so never idle-stop it.
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "3s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/health"

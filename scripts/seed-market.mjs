@@ -33,7 +33,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rand = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
 
 const connection = new anchor.web3.Connection(RPC, "confirmed");
-const payer = Keypair.generate();
+// On a public cluster the payer can't be airdropped 100 SOL, so load a
+// pre-funded keypair from PAYER_KEYPAIR; localnet generates + airdrops.
+const payer = process.env.PAYER_KEYPAIR
+  ? Keypair.fromSecretKey(Uint8Array.from(JSON.parse(fs.readFileSync(process.env.PAYER_KEYPAIR, "utf-8"))))
+  : Keypair.generate();
 const maker = Keypair.generate();
 const taker = Keypair.generate();
 // The terminal's burner wallet: fund + deposit for it so the UI can
@@ -53,16 +57,37 @@ const Ask = { ask: {} };
 const PostOnly = { postOnly: {} };
 const IOC = { immediateOrCancel: {} };
 
+const isLocal = RPC.includes("127.0.0.1") || RPC.includes("localhost");
+
 async function airdrop(to, sol) {
   const sig = await connection.requestAirdrop(to, sol * LAMPORTS_PER_SOL);
   await connection.confirmTransaction(sig, "confirmed");
 }
 
+// Fund a keypair with SOL. Localnet airdrops freely; on public clusters
+// (devnet) airdrops are capped and rate-limited, so move SOL from the
+// pre-funded payer instead.
+async function fundSol(to, sol) {
+  if (isLocal) return airdrop(to, sol);
+  const tx = new anchor.web3.Transaction().add(
+    SystemProgram.transfer({
+      fromPubkey: payer.publicKey,
+      toPubkey: to,
+      lamports: sol * LAMPORTS_PER_SOL,
+    }),
+  );
+  await anchor.web3.sendAndConfirmTransaction(connection, tx, [payer]);
+}
+
 console.log("funding accounts…");
-await airdrop(payer.publicKey, 100);
-await airdrop(maker.publicKey, 10);
-await airdrop(taker.publicKey, 10);
-await airdrop(dev.publicKey, 10);
+if (isLocal) {
+  await airdrop(payer.publicKey, 100);
+} else if (!process.env.PAYER_KEYPAIR) {
+  throw new Error("public cluster: set PAYER_KEYPAIR to a funded keypair (airdrops can't cover the payer)");
+}
+await fundSol(maker.publicKey, 2);
+await fundSol(taker.publicKey, 2);
+await fundSol(dev.publicKey, 2);
 
 const baseMint = await createMint(connection, payer, payer.publicKey, null, 9);
 const quoteMint = await createMint(connection, payer, payer.publicKey, null, 6);
