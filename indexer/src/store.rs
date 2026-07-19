@@ -356,6 +356,31 @@ impl Store {
         }))
     }
 
+    /// Funding cranks newest-first — feeds the terminal's rate sparkline.
+    pub async fn funding_history(
+        &self,
+        market: &str,
+        limit: i64,
+    ) -> Result<Vec<serde_json::Value>> {
+        let rows = sqlx::query(
+            "SELECT premium_bps, ts FROM funding
+             WHERE market = $1 ORDER BY ts DESC LIMIT $2",
+        )
+        .bind(market)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                serde_json::json!({
+                    "premium_bps": r.get::<i64, _>("premium_bps"),
+                    "ts": r.get::<DateTime<Utc>, _>("ts"),
+                })
+            })
+            .collect())
+    }
+
     pub async fn trades(&self, market: &str, limit: i64) -> Result<Vec<TradeRow>> {
         Ok(sqlx::query_as::<_, TradeRow>(
             "SELECT id, market, maker, taker, taker_side, price, qty, taker_fee, signature, ts

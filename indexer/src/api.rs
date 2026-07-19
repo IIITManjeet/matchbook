@@ -145,27 +145,50 @@ async fn orders(
     Ok(Json(rows))
 }
 
+#[derive(Deserialize)]
+struct FundingQuery {
+    /// When set, include up to this many historical rows (newest first).
+    limit: Option<i64>,
+}
+
 async fn funding(
     State(app): State<App>,
     Path(market): Path<String>,
+    Query(q): Query<FundingQuery>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let latest = app.store.latest_funding(&market).await.map_err(internal)?;
-    Ok(Json(json!({ "market": market, "latest": latest })))
+    let history = match q.limit {
+        Some(limit) => Some(
+            app.store
+                .funding_history(&market, limit.clamp(1, 1000))
+                .await
+                .map_err(internal)?,
+        ),
+        None => None,
+    };
+    Ok(Json(json!({ "market": market, "latest": latest, "history": history })))
 }
 
 // ── WebSocket ──────────────────────────────────────────────────────────
 //
 // Protocol (JSON text frames):
 //   client → {"op":"subscribe","channel":"trades"|"book","market":"<pubkey>"}
+//   client → {"op":"subscribe","channel":"account","market":...,"owner":"<pubkey>"}
 //   client → {"op":"unsubscribe", ...same fields}
 //   server → {"channel":"book","market":...,"data":{"type":"snapshot"|"delta",...}}
 //   server → {"channel":"trades","market":...,"data":{price,qty,taker_side,ts,signature}}
+//   server → {"channel":"account","market":...,"data":{"type":"order"|"fill",...}}
+//
+// "account" is owner-scoped: only the subscriber that named the owner
+// receives its order/fill stream — the push path that replaces polling.
 
 #[derive(Deserialize)]
 struct ClientOp {
     op: String,
     channel: String,
     market: String,
+    #[serde(default)]
+    owner: Option<String>,
 }
 
 async fn ws_upgrade(State(app): State<App>, ws: WebSocketUpgrade) -> impl IntoResponse {
@@ -175,7 +198,8 @@ async fn ws_upgrade(State(app): State<App>, ws: WebSocketUpgrade) -> impl IntoRe
 async fn ws_client(app: App, socket: WebSocket) {
     let (mut sink, mut stream) = socket.split();
     let mut feed = app.ws_tx.subscribe();
-    let mut subs: HashSet<(String, String)> = HashSet::new();
+    // (channel, market, owner) — owner is "" for market-wide channels.
+    let mut subs: HashSet<(String, String, String)> = HashSet::new();
 
     loop {
         tokio::select! {
@@ -188,7 +212,11 @@ async fn ws_client(app: App, socket: WebSocket) {
                     )).await;
                     continue;
                 };
-                let key = (op.channel.clone(), op.market.clone());
+                let key = (
+                    op.channel.clone(),
+                    op.market.clone(),
+                    op.owner.clone().unwrap_or_default(),
+                );
                 match op.op.as_str() {
                     "subscribe" => {
                         // A book subscription starts with a full snapshot so
@@ -224,7 +252,12 @@ async fn ws_client(app: App, socket: WebSocket) {
                     }
                     Err(_) => break, // sender dropped: shutting down
                 };
-                if !subs.contains(&(msg.channel.to_string(), msg.market.clone())) {
+                let key = (
+                    msg.channel.to_string(),
+                    msg.market.clone(),
+                    msg.owner.clone().unwrap_or_default(),
+                );
+                if !subs.contains(&key) {
                     continue;
                 }
                 let frame = json!({

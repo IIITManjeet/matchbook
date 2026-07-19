@@ -19,8 +19,11 @@ use crate::store::Store;
 /// A message fanned out to websocket subscribers.
 #[derive(Debug, Clone)]
 pub struct WsBroadcast {
-    pub channel: &'static str, // "trades" | "book" | "mark" | "funding" | "liquidations"
+    pub channel: &'static str, // "trades" | "book" | "mark" | "funding" | "liquidations" | "account"
     pub market: String,
+    /// Set on "account" messages: only the subscriber for this owner
+    /// receives them. None = market-wide fan-out.
+    pub owner: Option<String>,
     pub payload: serde_json::Value,
 }
 
@@ -46,7 +49,13 @@ pub struct Shared {
 impl Shared {
     fn broadcast(&self, channel: &'static str, market: String, payload: serde_json::Value) {
         // Send fails only when nobody is subscribed; that's fine.
-        let _ = self.ws_tx.send(WsBroadcast { channel, market, payload });
+        let _ = self.ws_tx.send(WsBroadcast { channel, market, owner: None, payload });
+    }
+
+    /// Push an owner-scoped update on the "account" channel — the push
+    /// path that lets the terminal drop its 2s order/fill poll.
+    fn broadcast_account(&self, market: String, owner: String, payload: serde_json::Value) {
+        let _ = self.ws_tx.send(WsBroadcast { channel: "account", market, owner: Some(owner), payload });
     }
 }
 
@@ -131,12 +140,30 @@ pub async fn process_tx(
                     .await
                     .market_mut(&market)
                     .place(e.order_id, e.side, e.price, e.qty);
+                shared.broadcast_account(
+                    market.clone(),
+                    e.owner.to_base58(),
+                    json!({
+                        "type": "order",
+                        "order_id": e.order_id,
+                        "status": "open",
+                        "side": e.side,
+                        "price": e.price,
+                        "qty": e.qty,
+                        "ts": ts,
+                    }),
+                );
                 shared.broadcast("book", market, json!({ "type": "delta", "levels": [delta] }));
             }
             ClobEvent::OrderCanceled(e) => {
                 let market = e.market.to_base58();
                 shared.store.cancel_order(&market, e.order_id).await?;
                 let delta = shared.books.write().await.market_mut(&market).cancel(e.order_id);
+                shared.broadcast_account(
+                    market.clone(),
+                    e.owner.to_base58(),
+                    json!({ "type": "order", "order_id": e.order_id, "status": "canceled", "ts": ts }),
+                );
                 if let Some(delta) = delta {
                     shared.broadcast("book", market, json!({ "type": "delta", "levels": [delta] }));
                 }
@@ -179,6 +206,25 @@ pub async fn process_tx(
                         "signature": signature,
                     }),
                 );
+                // Self-trades are rejected on-chain, so maker ≠ taker and
+                // each fill notifies exactly two distinct accounts.
+                for (who, role) in [(&e.maker, "maker"), (&e.taker, "taker")] {
+                    shared.broadcast_account(
+                        market.clone(),
+                        who.to_base58(),
+                        json!({
+                            "type": "fill",
+                            "role": role,
+                            "maker_order_id": e.maker_order_id,
+                            "taker_side": e.taker_side,
+                            "price": e.price,
+                            "qty": e.qty,
+                            "taker_fee": e.taker_fee,
+                            "ts": ts,
+                            "signature": signature,
+                        }),
+                    );
+                }
                 if let Some(delta) = delta {
                     shared.broadcast("book", market, json!({ "type": "delta", "levels": [delta] }));
                 }
