@@ -35,9 +35,11 @@ export default function BottomPanel() {
   const wallet = useTerminal((s) => s.wallet);
   const position = useTerminal((s) => s.position);
   const closePerpPosition = useTerminal((s) => s.closePerpPosition);
+  const reducePerpPosition = useTerminal((s) => s.reducePerpPosition);
   const depositCollateral = useTerminal((s) => s.depositCollateral);
   const withdrawCollateral = useTerminal((s) => s.withdrawCollateral);
   const [collateralAmt, setCollateralAmt] = useState("");
+  const [reduceAmt, setReduceAmt] = useState("");
 
   const isPerp = market.symbol.endsWith("PERP");
 
@@ -148,13 +150,37 @@ export default function BottomPanel() {
                       {fmtPrice(Math.abs(position.pendingFunding))}
                     </td>
                     <td className={`${cellCls} text-right`}>
-                      <button
-                        data-testid="close-position"
-                        onClick={closePerpPosition}
-                        className="rounded-lg border border-line px-2.5 py-1 text-[11px] text-muted transition-all hover:border-down/60 hover:text-down"
-                      >
-                        Close
-                      </button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <input
+                          data-testid="reduce-size"
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          max={Math.abs(position.size)}
+                          value={reduceAmt}
+                          placeholder="size"
+                          onChange={(e) => setReduceAmt(e.target.value)}
+                          className="num w-20 rounded-lg border border-line bg-panel2 px-2 py-1 text-[11px] text-ink outline-none placeholder:text-faint focus:border-accent"
+                        />
+                        <button
+                          data-testid="reduce-position"
+                          onClick={() => {
+                            reducePerpPosition(parseFloat(reduceAmt) || 0);
+                            setReduceAmt("");
+                          }}
+                          disabled={!(parseFloat(reduceAmt) > 0)}
+                          className="rounded-lg border border-line px-2.5 py-1 text-[11px] text-muted transition-all hover:border-accent hover:text-ink disabled:opacity-40"
+                        >
+                          Reduce
+                        </button>
+                        <button
+                          data-testid="close-position"
+                          onClick={closePerpPosition}
+                          className="rounded-lg border border-line px-2.5 py-1 text-[11px] text-muted transition-all hover:border-down/60 hover:text-down"
+                        >
+                          Close
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 </tbody>

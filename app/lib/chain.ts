@@ -349,6 +349,7 @@ export class PerpClient {
       equity,
       freeCollateral: Math.max(0, equity - initReq),
       leverage: equity > 0 ? notional / equity : 0,
+      maintMarginBps: mkt.maintMarginBps,
     };
   }
 

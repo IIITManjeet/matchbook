@@ -10,6 +10,7 @@ import OrderForm from "@/components/OrderForm";
 import BottomPanel from "@/components/BottomPanel";
 import ConnectScreen from "@/components/ConnectScreen";
 import Toasts from "@/components/Toasts";
+import CommandPalette from "@/components/CommandPalette";
 
 const card =
   "min-h-0 overflow-hidden rounded-xl border border-line bg-panel shadow-card";
@@ -69,6 +70,7 @@ export default function Terminal() {
         </main>
       </div>
       <Toasts />
+      <CommandPalette />
     </div>
   );
 }

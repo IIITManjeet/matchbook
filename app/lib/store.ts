@@ -52,6 +52,7 @@ let orderSeq = 0;
 let chain: ChainClient | null = null;
 let perp: PerpClient | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let refreshDebounce: ReturnType<typeof setTimeout> | null = null;
 
 export type FeedSource = "indexer" | "mock";
 
@@ -110,6 +111,8 @@ interface TerminalState {
   position: PerpPosition | null;
   /** latest funding premium (bps/day) for the selected perp market */
   fundingBps: number | null;
+  /** recent funding cranks, oldest-first — drives the rate sparkline */
+  fundingHistory: { bps: number; ts: number }[];
 
   /** set when the user clicks a book/trade price; consumed by the order form */
   quotedPrice: number | null;
@@ -118,8 +121,13 @@ interface TerminalState {
   toasts: Toast[];
   /** last-used order ticket side/type, persisted across visits */
   prefs: TicketPrefs;
+  /** chart candle resolution in seconds (persisted preference) */
+  chartInterval: number;
+  /** resolution the current `candles` array was actually built at */
+  candleInterval: number;
 
   startFeed: () => void;
+  setChartInterval: (secs: number) => void;
   switchMarket: (pubkey: string) => void;
   enterAsGuest: () => void;
   connectWallet: () => void;
@@ -133,6 +141,8 @@ interface TerminalState {
   cancelOrder: (id: string) => void;
   openPerpPosition: (side: Side, size: number) => void;
   closePerpPosition: () => void;
+  /** reduce the open position by `size` SOL without flipping it */
+  reducePerpPosition: (size: number) => void;
   depositCollateral: (amount: number) => void;
   withdrawCollateral: (amount: number) => void;
 }
@@ -163,6 +173,7 @@ const PERSISTED = (s: TerminalState) => ({
   walletAutoConnect: s.walletAutoConnect,
   selectedMarket: s.selectedMarket,
   prefs: s.prefs,
+  chartInterval: s.chartInterval,
 });
 
 /** SSR / node tests: no localStorage, persist becomes a no-op. */
@@ -204,9 +215,12 @@ export const useTerminal = create<TerminalState>()(
   fills: [],
   position: null,
   fundingBps: null,
+  fundingHistory: [],
   quotedPrice: null,
   toasts: [],
   prefs: { side: "buy", orderType: "limit" },
+  chartInterval: 60,
+  candleInterval: 60,
 
   startFeed: () => {
     if (feed || feedStarting) return;
@@ -319,6 +333,11 @@ export const useTerminal = create<TerminalState>()(
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
   setPrefs: (prefs) => set((s) => ({ prefs: { ...s.prefs, ...prefs } })),
+
+  setChartInterval: (secs) => {
+    set({ chartInterval: secs });
+    if (feed instanceof IndexerFeed) feed.setResolution(secs);
+  },
 
   placeOrder: (side, type, price, size) => {
     const market = get().market;
@@ -446,6 +465,24 @@ export const useTerminal = create<TerminalState>()(
       });
   },
 
+  reducePerpPosition: (size) => {
+    if (!perp || size <= 0) return;
+    const pos = get().position;
+    if (!pos || pos.size === 0) return;
+    // Clamp to the open size so a fat-fingered input can't flip the side.
+    const delta = pos.size > 0 ? -Math.min(size, pos.size) : Math.min(size, -pos.size);
+    perp
+      .openPosition(delta)
+      .then(() => {
+        get().pushToast("success", `Position reduced by ${Math.abs(delta)}`);
+        return refreshChainState(set);
+      })
+      .catch((err) => {
+        console.error("reduce position failed:", err);
+        get().pushToast("error", `Reduce failed: ${errText(err)}`);
+      });
+  },
+
   closePerpPosition: () => {
     if (!perp) return;
     perp
@@ -514,6 +551,8 @@ type Get = () => TerminalState;
 function attachFeed(set: Set, get: Get, f: MockFeed | IndexerFeed, source: FeedSource) {
   feed = f;
   const isPerp = f instanceof IndexerFeed && f.kind === "perp";
+  // Restore the persisted chart resolution before the first fetch.
+  if (f instanceof IndexerFeed) f.setResolution(get().chartInterval);
   set(() => ({
     market: isPerp ? PERP_MARKET : SPOT_MARKET,
     selectedMarket: f instanceof IndexerFeed ? f.marketPubkey : null,
@@ -524,6 +563,7 @@ function attachFeed(set: Set, get: Get, f: MockFeed | IndexerFeed, source: FeedS
       asks: snap.asks,
       trades: snap.trades,
       candles: snap.candles,
+      candleInterval: snap.candleInterval,
       lastPrice: snap.lastPrice,
       lastSide: snap.lastSide,
       stats: snap.stats,
@@ -606,16 +646,38 @@ function resolveRoleInBackground(set: Set, get: Get, address: string) {
     .catch((err) => console.error("role resolution failed:", err));
 }
 
+/**
+ * Account sync: push-driven when the indexer's owner-scoped "account"
+ * channel is available — each order/fill event triggers a (debounced)
+ * refresh — with a slow poll as the safety net for missed events and
+ * balance drift. Perp state has no account channel yet, so it keeps the
+ * original fast poll.
+ */
 function startChainPolling(set: Set, get: Get) {
   void get;
   stopChainPolling();
   void refreshChainState(set);
-  pollTimer = setInterval(() => void refreshChainState(set), 2_000);
+
+  const address = perp?.address ?? chain?.address;
+  if (chain && feed instanceof IndexerFeed && address) {
+    feed.subscribeAccount(address, () => {
+      if (refreshDebounce) clearTimeout(refreshDebounce);
+      // Small delay: the fill's DB writes land just before the push, but
+      // batches of events (a sweep) should coalesce into one refresh.
+      refreshDebounce = setTimeout(() => void refreshChainState(set), 250);
+    });
+    pollTimer = setInterval(() => void refreshChainState(set), 15_000);
+  } else {
+    pollTimer = setInterval(() => void refreshChainState(set), 2_000);
+  }
 }
 
 function stopChainPolling() {
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = null;
+  if (refreshDebounce) clearTimeout(refreshDebounce);
+  refreshDebounce = null;
+  if (feed instanceof IndexerFeed) feed.subscribeAccount(null);
 }
 
 async function refreshChainState(set: Set) {
@@ -632,8 +694,12 @@ async function refreshChainState(set: Set) {
         fetch(`${INDEXER_HTTP}/markets/${f.marketPubkey}/trades?limit=100`).then(
           (r) => r.json() as Promise<{ id: number; taker: string; taker_side: number; price: number; qty: number; taker_fee: number; ts: string }[]>,
         ),
-        fetch(`${INDEXER_HTTP}/markets/${f.marketPubkey}/funding`).then(
-          (r) => r.json() as Promise<{ latest: { premium_bps: number } | null }>,
+        fetch(`${INDEXER_HTTP}/markets/${f.marketPubkey}/funding?limit=48`).then(
+          (r) =>
+            r.json() as Promise<{
+              latest: { premium_bps: number } | null;
+              history?: { premium_bps: number; ts: string }[] | null;
+            }>,
         ),
       ]);
       const fills: Fill[] = tradeRows
@@ -651,6 +717,9 @@ async function refreshChainState(set: Set) {
         position: pos,
         fills,
         fundingBps: fundingRes.latest?.premium_bps ?? null,
+        fundingHistory: (fundingRes.history ?? [])
+          .map((h) => ({ bps: h.premium_bps, ts: Date.parse(h.ts) }))
+          .reverse(), // API is newest-first; the sparkline reads left→right
         balances: {
           USDC: {
             total: pos.collateral,

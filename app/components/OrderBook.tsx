@@ -1,10 +1,34 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { useTerminal } from "@/lib/store";
 import { fmtPrice, fmtSize, shortAddress } from "@/lib/format";
 import type { BookLevel, Side } from "@/lib/types";
 
 const ROWS = 11;
+
+/** Tiny inline funding-rate sparkline; green above zero, red below. */
+function Sparkline({ points }: { points: { bps: number; ts: number }[] }) {
+  if (points.length < 2) return null;
+  const w = 96;
+  const h = 24;
+  const vals = points.map((p) => p.bps);
+  const min = Math.min(...vals, 0);
+  const max = Math.max(...vals, 0);
+  const span = max - min || 1;
+  const x = (i: number) => (i / (points.length - 1)) * w;
+  const y = (v: number) => h - ((v - min) / span) * h;
+  const path = vals.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const last = vals[vals.length - 1];
+  return (
+    <svg width={w} height={h} className="overflow-visible" data-testid="funding-sparkline">
+      {min < 0 && max > 0 && (
+        <line x1={0} x2={w} y1={y(0)} y2={y(0)} stroke="#2d3950" strokeDasharray="2 3" />
+      )}
+      <path d={path} fill="none" strokeWidth={1.5} stroke={last >= 0 ? "#2ebd85" : "#f6465d"} />
+    </svg>
+  );
+}
 
 function BookRow({
   level,
@@ -17,12 +41,27 @@ function BookRow({
   maxTotal: number;
   onClick: () => void;
 }) {
+  // Flash when the size at THIS price changes — green up, red down. A
+  // different price in the slot means the ladder shifted, not a size
+  // change, so no flash (rows are slot-keyed and update in place).
+  const prevRef = useRef<{ price: number; size: number } | null>(null);
+  const [flash, setFlash] = useState("");
+  useEffect(() => {
+    const prev = prevRef.current;
+    prevRef.current = { price: level.price, size: level.size };
+    if (prev && prev.price === level.price && prev.size !== level.size) {
+      setFlash(prev.size < level.size ? "flash-up" : "flash-down");
+      const t = setTimeout(() => setFlash(""), 500);
+      return () => clearTimeout(t);
+    }
+  }, [level.price, level.size]);
+
   const depthPct = Math.min(100, (level.total / maxTotal) * 100);
   const barColor = side === "buy" ? "rgba(46,189,133,0.14)" : "rgba(246,70,93,0.14)";
   return (
     <button
       onClick={onClick}
-      className="relative grid w-full grid-cols-3 px-3 py-[3px] text-right hover:bg-panel2"
+      className={`relative grid w-full grid-cols-3 px-3 py-[3px] text-right hover:bg-panel2 ${flash}`}
       title={`Set limit price ${fmtPrice(level.price)}`}
     >
       <span
@@ -46,6 +85,7 @@ export default function OrderBook() {
   const market = useTerminal((s) => s.market);
   const quotePrice = useTerminal((s) => s.quotePrice);
   const fundingBps = useTerminal((s) => s.fundingBps);
+  const fundingHistory = useTerminal((s) => s.fundingHistory);
   const position = useTerminal((s) => s.position);
   const perpAdmin = useTerminal((s) => s.perpAdmin);
   const role = useTerminal((s) => s.role);
@@ -79,6 +119,7 @@ export default function OrderBook() {
               >
                 {fundingBps !== null ? `${(fundingBps / 100).toFixed(2)}%` : "—"}
               </span>
+              <Sparkline points={fundingHistory} />
             </div>
             <div className="flex flex-col items-center gap-1 rounded-xl border border-line bg-panel2/60 p-3">
               <span className="text-[10px] uppercase tracking-wider text-faint">Max leverage</span>

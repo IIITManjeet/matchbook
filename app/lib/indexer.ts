@@ -88,9 +88,16 @@ export class BookMirror {
   }
 }
 
-/** Fold a trade into the 1m candle list (same rule as the mock feed). */
-export function updateCandles(candles: Candle[], price: number, size: number, tsMs: number, cap = 1500) {
-  const bucket = Math.floor(tsMs / 1000 / 60) * 60;
+/** Fold a trade into the candle list (same rule as the mock feed). */
+export function updateCandles(
+  candles: Candle[],
+  price: number,
+  size: number,
+  tsMs: number,
+  cap = 1500,
+  bucketSecs = 60,
+) {
+  const bucket = Math.floor(tsMs / 1000 / bucketSecs) * bucketSecs;
   const last = candles[candles.length - 1];
   if (last && last.time === bucket) {
     last.high = Math.max(last.high, price);
@@ -144,6 +151,13 @@ export class IndexerFeed {
   private ws: WebSocket | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
+  /** Candle bucket seconds: requested vs actually loaded. Snapshots
+   *  carry the applied value so the chart reseeds exactly when the
+   *  refetched series lands — never against a stale mix. */
+  private resolution = 60;
+  private appliedResolution = 60;
+  private accountHandler: ((data: Record<string, unknown>) => void) | null = null;
+  private accountOwner: string | null = null;
 
   private constructor(market: IndexerMarket) {
     this.market = market;
@@ -216,24 +230,51 @@ export class IndexerFeed {
     this.ws = null;
   }
 
+  /** Switch candle resolution; refetches when the feed is already live. */
+  setResolution(secs: number) {
+    if (secs === this.resolution) return;
+    this.resolution = secs;
+    if (this.timer) void this.refetchCandles();
+  }
+
+  private async fetchCandles(resolution: number): Promise<Candle[]> {
+    const pk = this.market.pubkey;
+    const rows = (await fetch(
+      `${HTTP_URL}/markets/${pk}/candles?resolution=${resolution}&limit=1500`,
+    ).then((r) => r.json())) as { bucket: string; open: number; high: number; low: number; close: number; volume: number }[];
+    return rows.map((c) => ({
+      time: Math.floor(Date.parse(c.bucket) / 1000),
+      open: this.conv.priceToUi(c.open),
+      high: this.conv.priceToUi(c.high),
+      low: this.conv.priceToUi(c.low),
+      close: this.conv.priceToUi(c.close),
+      volume: this.conv.sizeToUi(c.volume),
+    }));
+  }
+
+  private async refetchCandles() {
+    const want = this.resolution;
+    try {
+      const candles = await this.fetchCandles(want);
+      // A newer request or a stop may have superseded this one.
+      if (this.stopped || want !== this.resolution) return;
+      this.candles = candles;
+      this.appliedResolution = want;
+    } catch (err) {
+      console.error("candle refetch failed:", err);
+    }
+  }
+
   private async bootstrap() {
     const pk = this.market.pubkey;
     const [candles, trades, book] = await Promise.all([
-      fetch(`${HTTP_URL}/markets/${pk}/candles?resolution=60&limit=1500`).then((r) => r.json()),
+      this.fetchCandles(this.resolution),
       fetch(`${HTTP_URL}/markets/${pk}/trades?limit=60`).then((r) => r.json()),
       fetch(`${HTTP_URL}/markets/${pk}/book?depth=50`).then((r) => r.json()),
     ]);
 
-    this.candles = (candles as { bucket: string; open: number; high: number; low: number; close: number; volume: number }[]).map(
-      (c) => ({
-        time: Math.floor(Date.parse(c.bucket) / 1000),
-        open: this.conv.priceToUi(c.open),
-        high: this.conv.priceToUi(c.high),
-        low: this.conv.priceToUi(c.low),
-        close: this.conv.priceToUi(c.close),
-        volume: this.conv.sizeToUi(c.volume),
-      }),
-    );
+    this.candles = candles;
+    this.appliedResolution = this.resolution;
 
     // REST trades come newest-first, which is also the tape's order.
     this.trades = (trades as { id: number; price: number; qty: number; taker_side: number; ts: string }[]).map((t) => ({
@@ -265,6 +306,7 @@ export class IndexerFeed {
       for (const channel of channels) {
         ws.send(JSON.stringify({ op: "subscribe", channel, market: this.market.pubkey }));
       }
+      if (this.accountOwner) this.sendAccountSub(this.accountOwner);
     };
     ws.onmessage = (ev) => this.onMessage(JSON.parse(ev.data as string));
     ws.onclose = () => {
@@ -273,9 +315,38 @@ export class IndexerFeed {
     };
   }
 
+  /**
+   * Owner-scoped push stream: order acks/cancels and fills for one
+   * wallet, so the store can refresh on events instead of polling.
+   * Survives websocket reconnects; pass null to unsubscribe.
+   */
+  subscribeAccount(owner: string | null, onEvent?: (data: Record<string, unknown>) => void) {
+    if (this.accountOwner && this.accountOwner !== owner && this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(
+        JSON.stringify({
+          op: "unsubscribe",
+          channel: "account",
+          market: this.market.pubkey,
+          owner: this.accountOwner,
+        }),
+      );
+    }
+    this.accountOwner = owner;
+    this.accountHandler = owner ? (onEvent ?? null) : null;
+    if (owner && this.ws?.readyState === WebSocket.OPEN) this.sendAccountSub(owner);
+  }
+
+  private sendAccountSub(owner: string) {
+    this.ws?.send(
+      JSON.stringify({ op: "subscribe", channel: "account", market: this.market.pubkey, owner }),
+    );
+  }
+
   private onMessage(msg: { channel: string; market: string; data: Record<string, unknown> }) {
     if (msg.market !== this.market.pubkey) return;
-    if (msg.channel === "book") {
+    if (msg.channel === "account") {
+      this.accountHandler?.(msg.data);
+    } else if (msg.channel === "book") {
       if (msg.data.type === "snapshot") {
         this.book.applySnapshot(msg.data.book as { bids: [number, number][]; asks: [number, number][] });
       } else {
@@ -286,7 +357,7 @@ export class IndexerFeed {
       const d = msg.data as { price: number; ts: string };
       const price = this.conv.priceToUi(d.price);
       this.lastPrice = price;
-      updateCandles(this.candles, price, 0, Date.parse(d.ts) || Date.now());
+      updateCandles(this.candles, price, 0, Date.parse(d.ts) || Date.now(), 1500, this.appliedResolution);
     } else if (msg.channel === "trades") {
       const d = msg.data as { price: number; qty: number; taker_side: number; ts: string };
       const trade: Trade = {
@@ -300,7 +371,7 @@ export class IndexerFeed {
       if (this.trades.length > 60) this.trades.pop();
       this.lastPrice = trade.price;
       this.lastSide = trade.side;
-      updateCandles(this.candles, trade.price, trade.size, trade.ts);
+      updateCandles(this.candles, trade.price, trade.size, trade.ts, 1500, this.appliedResolution);
     }
   }
 
@@ -310,6 +381,7 @@ export class IndexerFeed {
       asks: this.book.levels("sell", this.conv),
       trades: [...this.trades],
       candles: this.candles.map((c) => ({ ...c })),
+      candleInterval: this.appliedResolution,
       lastPrice: this.lastPrice,
       lastSide: this.lastSide,
       stats: statsFromCandles(this.candles, Date.now() / 1000),

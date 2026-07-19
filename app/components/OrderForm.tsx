@@ -74,6 +74,28 @@ export default function OrderForm() {
   const marginRequired = total * 0.1;
   const freeCollateral = position ? position.freeCollateral : 0;
 
+  // Estimated liquidation price for the resulting position: same solve
+  // as PerpClient.state() — equity(P) = maintenance(P) — assuming this
+  // order fills at the mark. Approximate, but honest about direction.
+  let estLiq: number | null = null;
+  if (isPerp && position && sizeNum > 0) {
+    const delta = side === "buy" ? sizeNum : -sizeNum;
+    const s2 = position.size + delta;
+    if (s2 !== 0) {
+      const sameSign = position.size !== 0 && Math.sign(s2) === Math.sign(position.size);
+      const entry2 =
+        sameSign && Math.sign(delta) === Math.sign(position.size)
+          ? (position.size * position.entryPrice + delta * lastPrice) / s2
+          : sameSign
+            ? position.entryPrice // pure reduction keeps the entry
+            : lastPrice; // flip resets it
+      const c = position.equity;
+      const mb = position.maintMarginBps / 10_000;
+      const p = (s2 * entry2 - c) / (s2 - Math.abs(s2) * mb);
+      estLiq = p > 0 ? p : null;
+    }
+  }
+
   const available = isPerp
     ? freeCollateral
     : side === "buy"
@@ -207,6 +229,9 @@ export default function OrderForm() {
             <InfoRow label="Notional">{fmtPrice(total)} {market.quote}</InfoRow>
             <InfoRow label="Margin required (10x)">{fmtPrice(marginRequired)} {market.quote}</InfoRow>
             <InfoRow label="Free collateral">{fmtPrice(freeCollateral)} {market.quote}</InfoRow>
+            <InfoRow label="Est. liq. price" muted>
+              {estLiq !== null ? fmtPrice(estLiq) : "—"}
+            </InfoRow>
             <InfoRow label="Slippage guard" muted>1%</InfoRow>
             <InfoRow label="Taker fee (10 bps)" muted>{fmtPrice(total * 0.001)} {market.quote}</InfoRow>
           </>

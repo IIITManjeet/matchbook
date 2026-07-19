@@ -118,6 +118,38 @@ function crank() {
     .rpc();
 }
 
+// Hygiene: as the center drifts run to run, the maker's old quotes pile
+// up far from the mid. Cancel anything stale so the book stays a tight,
+// honest grid instead of an archaeological record.
+const STALE_TICKS = 15n;
+try {
+  const rows = await fetch(
+    `${INDEXER}/markets/${MARKET.toBase58()}/orders?owner=${maker.publicKey.toBase58()}&status=open`,
+  ).then((r) => r.json());
+  const stale = rows.filter((o) => {
+    const dist = BigInt(o.price) > center ? BigInt(o.price) - center : center - BigInt(o.price);
+    return dist > STALE_TICKS;
+  });
+  for (const o of stale.slice(0, 12)) {
+    await program.methods
+      .cancelOrder(o.side === 0 ? Bid : Ask, n(o.order_id))
+      .accountsPartial({
+        owner: maker.publicKey,
+        market: MARKET,
+        openOrders: makerOO,
+        bids,
+        asks,
+      })
+      .signers([maker])
+      .rpc()
+      .catch((err) => console.log("stale cancel skipped:", String(err).slice(0, 80)));
+    await sleep(400);
+  }
+  if (stale.length) console.log(`canceled ${Math.min(stale.length, 12)} stale maker orders`);
+} catch (err) {
+  console.log("stale sweep skipped:", String(err).slice(0, 80));
+}
+
 // Stock the grid first so the taker always has something to cross.
 for (let i = 1; i <= 4; i++) {
   await place(maker, Bid, center - BigInt(i), BigInt(rand(10, 60)), PostOnly).catch(() => {});

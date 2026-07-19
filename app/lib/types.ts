@@ -96,6 +96,8 @@ export interface PerpPosition {
   equity: number;
   freeCollateral: number;
   leverage: number;
+  /** market maintenance margin (bps) — lets the ticket estimate liq price */
+  maintMarginBps: number;
 }
 
 export interface FeedSnapshot {
@@ -103,6 +105,8 @@ export interface FeedSnapshot {
   asks: BookLevel[];
   trades: Trade[];
   candles: Candle[];
+  /** seconds per candle bucket the `candles` array was built at */
+  candleInterval: number;
   lastPrice: number;
   lastSide: Side;
   stats: MarketStats;

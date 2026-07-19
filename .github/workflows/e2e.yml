@@ -1,0 +1,45 @@
+name: terminal e2e
+
+# Headless-browser smoke test of the trading terminal on the mock feed
+# (no indexer in CI, so the app falls back to the simulator): login gate,
+# book, chart, order lifecycle, and session persistence across a reload.
+
+on:
+  push:
+    branches: [main]
+    paths: ["app/**"]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: start server and run e2e
+        run: |
+          npx next start -p 3000 &
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null http://localhost:3000 && break
+            sleep 1
+          done
+          node e2e/terminal.e2e.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshot
+          path: app/e2e/last-run.png
+          if-no-files-found: ignore

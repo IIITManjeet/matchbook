@@ -49,6 +49,7 @@ describe("persistence boundary", () => {
     const opts = useTerminal.persist.getOptions();
     const persisted = opts.partialize!(useTerminal.getState()) as Record<string, unknown>;
     expect(Object.keys(persisted).sort()).toEqual([
+      "chartInterval",
       "guest",
       "prefs",
       "selectedMarket",

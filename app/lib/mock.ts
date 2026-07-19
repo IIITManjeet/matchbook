@@ -184,6 +184,7 @@ export class MockFeed {
       asks: this.sideLevels("sell"),
       trades: [...this.trades],
       candles: this.candles.map((c) => ({ ...c })),
+      candleInterval: 60, // the simulator only fabricates 1m candles
       lastPrice: this.candles[this.candles.length - 1]?.close ?? this.mid,
       lastSide: this.lastSide,
       stats: this.stats(),

@@ -15,8 +15,14 @@ const EDGE_PATHS = [
 const CHROME_PATHS = [
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+  // Linux (GitHub Actions runners ship google-chrome preinstalled)
+  "/usr/bin/google-chrome",
+  "/usr/bin/google-chrome-stable",
+  "/usr/bin/chromium-browser",
 ];
-const executablePath = [...EDGE_PATHS, ...CHROME_PATHS].find((p) => fs.existsSync(p));
+const executablePath = [process.env.CHROME_PATH, ...EDGE_PATHS, ...CHROME_PATHS]
+  .filter(Boolean)
+  .find((p) => fs.existsSync(p));
 if (!executablePath) {
   console.error("No Edge/Chrome executable found for e2e run");
   process.exit(2);
@@ -137,6 +143,25 @@ try {
   check(true, "reload skips the login gate and reconnects the wallet");
   await page.waitForSelector('button[title^="Set limit price"]', { timeout: 10_000 });
   check(true, "book streams again after restore");
+
+  console.log("command palette + hotkeys");
+  await page.keyboard.down("Control");
+  await page.keyboard.press("KeyK");
+  await page.keyboard.up("Control");
+  await page.waitForSelector('[data-testid="command-palette"]', { timeout: 3000 });
+  await page.type('[data-testid="palette-input"]', "sell");
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid="side-sell"]')?.className.includes("bg-down-grad"),
+    { timeout: 3000 },
+  );
+  check(true, "palette command flips the ticket to sell");
+  await page.keyboard.press("KeyB"); // single-key hotkey outside inputs
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid="side-buy"]')?.className.includes("bg-up-grad"),
+    { timeout: 3000 },
+  );
+  check(true, "B hotkey flips the ticket back to buy");
 
   console.log("feed stays live");
   const tradeCount = async () =>
