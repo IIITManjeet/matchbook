@@ -1,0 +1,35 @@
+# Render Blueprint: free-tier hosting for the CLOB indexer.
+#
+# Deploy: Render dashboard -> New -> Blueprint -> pick this repo. Render reads
+# this file and prompts for DATABASE_URL (sync: false below) — paste the
+# Internal Database URL of a Postgres you created first (same region), or an
+# external one (Neon/Supabase; the indexer speaks TLS via rustls).
+#
+# Free-tier caveats this repo works around:
+# - Free web services spin down after ~15 min without inbound traffic, which
+#   would stop log ingestion. .github/workflows/keepalive.yml pings /health
+#   on a schedule to keep it warm.
+# - Render's own free Postgres expires after 30 days. Fine for a demo; use
+#   Neon (free, persistent) if the site should outlive that.
+services:
+  - type: web
+    name: matchbook-indexer
+    runtime: docker
+    rootDir: indexer
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: singapore
+    healthCheckPath: /health
+    envVars:
+      - key: LISTEN_ADDR
+        value: 0.0.0.0:8080
+      - key: RPC_HTTP
+        value: https://api.devnet.solana.com
+      - key: RPC_WS
+        value: wss://api.devnet.solana.com
+      - key: PROGRAM_ID
+        value: 9bezj1VAw4gTMKonswkKioRdsttD4UowXh87Fcw9Wtr2
+      - key: RUST_LOG
+        value: info,clob_indexer=debug
+      - key: DATABASE_URL
+        sync: false

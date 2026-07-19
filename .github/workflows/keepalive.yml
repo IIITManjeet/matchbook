@@ -1,0 +1,29 @@
+name: keep indexer awake
+
+# Render free instances spin down after ~15 min without inbound traffic,
+# which would stop the indexer's log tailing. Pinging /health keeps it up.
+# Cron is best-effort (GitHub delays busy slots), so */5 leaves headroom
+# before the 15-min idle cutoff. Uses the same NEXT_PUBLIC_INDEXER_URL repo
+# variable the Pages build reads, so there is one source of truth.
+#
+# NOTE: GitHub disables scheduled workflows after 60 days without repo
+# activity — any commit re-arms it.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    if: vars.NEXT_PUBLIC_INDEXER_URL != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: ping /health
+        env:
+          URL: ${{ vars.NEXT_PUBLIC_INDEXER_URL }}
+        # --retry covers a cold start already in progress; 60s max-time
+        # because a spun-down instance can take ~50s to come back.
+        run: curl -fsS --max-time 60 --retry 3 --retry-delay 10 "$URL/health"

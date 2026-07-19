@@ -10,7 +10,7 @@ data on the public site you need three things reachable over HTTPS/WSS:
 
 The repo already contains the container/config for step 2 and the workflow
 wiring for step 3. The commands below are the parts only you can run (they need
-your Solana keypair and a Fly.io account).
+your Solana keypair and a Render account).
 
 ---
 
@@ -62,32 +62,40 @@ Devnet knobs (all optional):
 The seeder now retries 429s with backoff and paces setup transactions on
 public clusters; it also skips preflight there to halve the RPC load.
 
-## 3. Host the indexer on Fly.io
+## 3. Host the indexer on Render (free tier)
 
-From `indexer/` (config lives in `indexer/fly.toml`, `indexer/Dockerfile`):
+`render.yaml` at the repo root is a Render Blueprint for the indexer
+(Docker build of `indexer/`, devnet RPC, `PROGRAM_ID`, `/health` check).
+In the [Render dashboard](https://dashboard.render.com):
 
-```bash
-cd indexer
-fly launch --no-deploy                 # creates the app; keep the generated name
-fly postgres create --name matchbook-db --region iad
-fly postgres attach matchbook-db       # injects DATABASE_URL as a secret
-fly deploy
-```
+1. **New → Postgres** — name it `matchbook-db`, region **Singapore**,
+   plan **Free**. Copy its **Internal Database URL** once created.
+   (Render's free Postgres is deleted after 30 days; use
+   [Neon](https://neon.tech)'s free tier instead if the site should
+   outlive that — the indexer speaks TLS, both work.)
+2. **New → Blueprint** — connect the GitHub repo. Render reads
+   `render.yaml` and prompts for `DATABASE_URL`; paste the URL from
+   step 1. Deploy.
 
-`fly.toml` already sets `RPC_HTTP`/`RPC_WS` to devnet, the `PROGRAM_ID`, and
-`LISTEN_ADDR=0.0.0.0:8080`, and keeps one machine always running (the indexer
-must tail logs continuously — `auto_stop_machines = "off"`). Migrations apply
-themselves on boot via `sqlx::migrate!`.
-
-Verify:
+Migrations apply themselves on boot via `sqlx::migrate!`. Verify:
 
 ```bash
-curl https://<your-app>.fly.dev/health      # {"ok":true}
-curl https://<your-app>.fly.dev/markets      # the market you seeded
+curl https://<your-service>.onrender.com/health       # {"ok":true}
+curl https://<your-service>.onrender.com/markets      # the market you seeded
 ```
 
-If `/markets` is empty, the indexer hasn't caught up — check `fly logs`.
-The RPC/program id can be changed without a rebuild: `fly secrets set RPC_HTTP=…`.
+If `/markets` is empty, the indexer hasn't caught up — check the service
+logs in the dashboard. Env vars (RPC, program id) can be changed there
+without a rebuild.
+
+**Spin-down**: free instances stop after ~15 min without inbound traffic,
+which would halt log ingestion. `.github/workflows/keepalive.yml` pings
+`/health` every 5 minutes to prevent this — it activates once the
+`NEXT_PUBLIC_INDEXER_URL` repo variable (step 4) is set, and GitHub
+disables it after 60 days without repo activity (any commit re-arms it).
+
+(`indexer/fly.toml` remains for the paid Fly.io alternative — always-on
+machine, no keep-alive needed.)
 
 ## 4. Point the Pages site at the live endpoints
 
@@ -109,14 +117,15 @@ feed — which is the current state.
 
 ## Notes & caveats
 
-- **Mixed content**: Pages is HTTPS, so both URLs must be HTTPS/WSS. Fly
+- **Mixed content**: Pages is HTTPS, so both URLs must be HTTPS/WSS. Render
   terminates TLS at the edge and proxies to the container's plain `:8080`.
 - **Trading vs viewing**: viewer/guest mode only needs the indexer. On-chain
   trading through the committed `app/lib/dev-wallet.json` burner also requires
   that wallet to be funded + deposited on devnet — the seeder does this for the
   market it creates. Real users would connect their own wallet instead.
-- **Cost**: a Fly Postgres + one always-on shared-cpu machine is the ongoing
-  cost. Scale to zero is not an option here because indexing must run
-  continuously.
+- **Cost**: free on Render's free tier (750 instance-hours/month covers one
+  always-up service) as long as the keep-alive ping keeps it from idling.
+  The free Render Postgres expires after 30 days — swap `DATABASE_URL` to a
+  free Neon database for something permanent.
 - **Keeping data fresh**: devnet has no organic flow on this market, so re-run
   the seeder (step 2) whenever you want new trades/candles.
