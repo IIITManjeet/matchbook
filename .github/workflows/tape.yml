@@ -1,0 +1,43 @@
+name: refresh trade tape
+
+# Devnet has no organic order flow, so without help the live terminal
+# shows a frozen book. Every half hour this prints ~90s of real on-chain
+# trades: the committed tape-maker burner rests a grid, the terminal's
+# dev wallet crosses it, and consume_events settles the fills. Both keys
+# are devnet-only burners committed to the repo — no secrets, no value.
+# One-time funding: scripts/tape-setup.mjs (needs the payer keypair).
+#
+# NOTE: GitHub disables scheduled workflows after 60 days without repo
+# activity — any commit re-arms it.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "seconds of tape to print"
+        default: "90"
+
+permissions: {}
+
+concurrency:
+  group: tape
+  cancel-in-progress: false
+
+jobs:
+  tape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: print tape
+        env:
+          DURATION_SEC: ${{ inputs.duration || '90' }}
+          INDEXER: ${{ vars.NEXT_PUBLIC_INDEXER_URL }}
+        run: node scripts/tape-run.mjs
