@@ -49,6 +49,19 @@ Note the printed `market:` pubkey — you can pin it later as
 Devnet is slower than localnet; a short run still produces a book, tape, and
 candles. Re-run to add activity.
 
+Devnet knobs (all optional):
+
+- `FUND_SOL=0.05` — SOL transferred to each actor (default 2). The actors
+  only pay tx fees, so this can be tiny when the payer is low and the
+  faucet (<https://faucet.solana.com>) is throttling.
+- `BASE_MINT=… QUOTE_MINT=…` — resume a run that died mid-way (public RPC
+  429s). The seeder skips `initMarket`/`createOpenOrders` for accounts
+  that already exist, so the rent a dead run paid isn't wasted. The mint
+  addresses live at bytes 8..72 of the market account if you lost them.
+
+The seeder now retries 429s with backoff and paces setup transactions on
+public clusters; it also skips preflight there to halve the RPC load.
+
 ## 3. Host the indexer on Fly.io
 
 From `indexer/` (config lives in `indexer/fly.toml`, `indexer/Dockerfile`):

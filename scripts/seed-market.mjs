@@ -46,8 +46,13 @@ const dev = Keypair.fromSecretKey(
   Uint8Array.from(JSON.parse(fs.readFileSync("app/lib/dev-wallet.json", "utf-8"))),
 );
 
+const isLocal = RPC.includes("127.0.0.1") || RPC.includes("localhost");
+
 const provider = new anchor.AnchorProvider(connection, new anchor.Wallet(payer), {
   commitment: "confirmed",
+  // Preflight simulation doubles the RPC load, which the public devnet
+  // endpoint punishes with 429s. Program errors still surface on confirm.
+  skipPreflight: !isLocal,
 });
 anchor.setProvider(provider);
 const program = new anchor.Program(idl, provider);
@@ -57,7 +62,24 @@ const Ask = { ask: {} };
 const PostOnly = { postOnly: {} };
 const IOC = { immediateOrCancel: {} };
 
-const isLocal = RPC.includes("127.0.0.1") || RPC.includes("localhost");
+// The public devnet RPC 429s under bursts. Back off and retry instead of
+// dying; anything that isn't a rate limit still throws immediately.
+async function withRetry(fn, label, attempts = 6) {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (i >= attempts - 1 || !String(err).includes("429")) throw err;
+      const wait = 4000 * (i + 1);
+      console.log(`${label}: rate-limited, retrying in ${wait / 1000}s…`);
+      await sleep(wait);
+    }
+  }
+}
+
+// Gap between setup transactions on public clusters so we stay under the
+// per-IP request budget; localnet doesn't need it.
+const pace = () => (isLocal ? Promise.resolve() : sleep(600));
 
 async function airdrop(to, sol) {
   const sig = await connection.requestAirdrop(to, sol * LAMPORTS_PER_SOL);
@@ -85,12 +107,26 @@ if (isLocal) {
 } else if (!process.env.PAYER_KEYPAIR) {
   throw new Error("public cluster: set PAYER_KEYPAIR to a funded keypair (airdrops can't cover the payer)");
 }
-await fundSol(maker.publicKey, 2);
-await fundSol(taker.publicKey, 2);
-await fundSol(dev.publicKey, 2);
+// Actors only pay tx fees; rent comes out of the payer. FUND_SOL trims
+// this when the payer itself is running low (devnet faucet throttling).
+const FUND_SOL = Number(process.env.FUND_SOL ?? 2);
+await withRetry(() => fundSol(maker.publicKey, FUND_SOL), "fund maker");
+await pace();
+await withRetry(() => fundSol(taker.publicKey, FUND_SOL), "fund taker");
+await pace();
+await withRetry(() => fundSol(dev.publicKey, FUND_SOL), "fund dev");
+await pace();
 
-const baseMint = await createMint(connection, payer, payer.publicKey, null, 9);
-const quoteMint = await createMint(connection, payer, payer.publicKey, null, 6);
+// A prior run that died mid-way already paid for the mints and market;
+// pass BASE_MINT/QUOTE_MINT to resume against them instead of re-paying.
+const baseMint = process.env.BASE_MINT
+  ? new PublicKey(process.env.BASE_MINT)
+  : await withRetry(() => createMint(connection, payer, payer.publicKey, null, 9), "base mint");
+await pace();
+const quoteMint = process.env.QUOTE_MINT
+  ? new PublicKey(process.env.QUOTE_MINT)
+  : await withRetry(() => createMint(connection, payer, payer.publicKey, null, 6), "quote mint");
+await pace();
 
 const pda = (...seeds) => PublicKey.findProgramAddressSync(seeds, program.programId)[0];
 const market = pda(Buffer.from("market"), baseMint.toBuffer(), quoteMint.toBuffer());
@@ -105,64 +141,97 @@ const devOO = pda(Buffer.from("open_orders"), market.toBuffer(), dev.publicKey.t
 
 console.log("market:", market.toBase58());
 
-await program.methods
-  .initMarket(n(TICK), n(LOT), FEE_BPS)
-  .accountsPartial({
-    payer: payer.publicKey,
-    baseMint,
-    quoteMint,
-    market,
-    baseVault,
-    quoteVault,
-    bids,
-    asks,
-    eventQueue,
-    tokenProgram: TOKEN_PROGRAM_ID,
-    systemProgram: SystemProgram.programId,
-  })
-  .signers([payer])
-  .rpc();
+if (await connection.getAccountInfo(market)) {
+  console.log("market already initialized, resuming");
+} else {
+  await withRetry(
+    () =>
+      program.methods
+        .initMarket(n(TICK), n(LOT), FEE_BPS)
+      .accountsPartial({
+        payer: payer.publicKey,
+        baseMint,
+        quoteMint,
+        market,
+        baseVault,
+        quoteVault,
+        bids,
+        asks,
+        eventQueue,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+        .signers([payer])
+        .rpc(),
+    "init market",
+  );
+}
+await pace();
 
 for (const [user, oo] of [
   [maker, makerOO],
   [taker, takerOO],
   [dev, devOO],
 ]) {
-  await program.methods
-    .createOpenOrders()
-    .accountsPartial({
-      owner: user.publicKey,
-      market,
-      openOrders: oo,
-      systemProgram: SystemProgram.programId,
-    })
-    .signers([user])
-    .rpc();
+  if (await connection.getAccountInfo(oo)) {
+    console.log("open orders exists, skipping:", oo.toBase58());
+  } else {
+    await withRetry(
+      () =>
+        program.methods
+          .createOpenOrders()
+          .accountsPartial({
+            owner: user.publicKey,
+            market,
+            openOrders: oo,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([user])
+          .rpc(),
+      "create open orders",
+    );
+  }
+  await pace();
 }
 
 // Both parties get both currencies: the maker quotes two-sided, the
 // taker crosses in both directions.
 async function fund(user, oo) {
-  const baseAta = await getOrCreateAssociatedTokenAccount(connection, payer, baseMint, user.publicKey);
-  const quoteAta = await getOrCreateAssociatedTokenAccount(connection, payer, quoteMint, user.publicKey);
-  await mintTo(connection, payer, baseMint, baseAta.address, payer, 100_000n * LOT); // 100 SOL
-  await mintTo(connection, payer, quoteMint, quoteAta.address, payer, 5_000_000_000n); // 5,000 USDC
+  const baseAta = await withRetry(
+    () => getOrCreateAssociatedTokenAccount(connection, payer, baseMint, user.publicKey),
+    "base ata",
+  );
+  await pace();
+  const quoteAta = await withRetry(
+    () => getOrCreateAssociatedTokenAccount(connection, payer, quoteMint, user.publicKey),
+    "quote ata",
+  );
+  await pace();
+  await withRetry(() => mintTo(connection, payer, baseMint, baseAta.address, payer, 100_000n * LOT), "mint base"); // 100 SOL
+  await pace();
+  await withRetry(() => mintTo(connection, payer, quoteMint, quoteAta.address, payer, 5_000_000_000n), "mint quote"); // 5,000 USDC
+  await pace();
   for (const [vault, ata, amount] of [
     [baseVault, baseAta.address, 100_000n * LOT],
     [quoteVault, quoteAta.address, 5_000_000_000n],
   ]) {
-    await program.methods
-      .deposit(n(amount))
-      .accountsPartial({
-        owner: user.publicKey,
-        market,
-        openOrders: oo,
-        vault,
-        userToken: ata,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      })
-      .signers([user])
-      .rpc();
+    await withRetry(
+      () =>
+        program.methods
+          .deposit(n(amount))
+          .accountsPartial({
+            owner: user.publicKey,
+            market,
+            openOrders: oo,
+            vault,
+            userToken: ata,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .signers([user])
+          .rpc(),
+      "deposit",
+    );
+    await pace();
   }
 }
 await fund(maker, makerOO);
@@ -191,8 +260,10 @@ let center = CENTER_START;
 
 console.log("resting the initial grid…");
 for (let i = 1; i <= 10; i++) {
-  await place(maker, makerOO, Bid, center - BigInt(i), BigInt(rand(5, 80)), PostOnly);
-  await place(maker, makerOO, Ask, center + BigInt(i), BigInt(rand(5, 80)), PostOnly);
+  await withRetry(() => place(maker, makerOO, Bid, center - BigInt(i), BigInt(rand(5, 80)), PostOnly), "grid bid");
+  await pace();
+  await withRetry(() => place(maker, makerOO, Ask, center + BigInt(i), BigInt(rand(5, 80)), PostOnly), "grid ask");
+  await pace();
 }
 
 console.log(`trading for ${MINUTES} minute(s)…`);
@@ -215,6 +286,7 @@ while (Date.now() < deadline) {
     center += buy ? 1n : -1n;
   } catch (err) {
     console.error("ioc failed:", String(err).slice(0, 120));
+    if (String(err).includes("429")) await sleep(5000);
   }
 
   // Keep the grid stocked near the (drifting) center.
