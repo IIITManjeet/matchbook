@@ -85,6 +85,12 @@ pub mod clob {
         instructions::cancel_order::handler(ctx, side, order_id)
     }
 
+    /// Remove up to `limit` of the caller's resting orders across both
+    /// sides in one transaction, unlocking as it goes.
+    pub fn cancel_all(ctx: Context<CancelAll>, limit: u16) -> Result<()> {
+        instructions::cancel_all::handler(ctx, limit)
+    }
+
     // ── M4: perpetual futures ──────────────────────────────────────────
 
     /// Create a perp market margined in `collateral_mint`, its vault,

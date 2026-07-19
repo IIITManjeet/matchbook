@@ -360,4 +360,47 @@ describe("clob M2 — matching engine", () => {
     const ata = await getAccount(connection, makerQuoteAta);
     assert.strictEqual(ata.amount.toString(), "500000");
   });
+
+  it("cancel_all sweeps both sides within its limit and restores every lock", async () => {
+    const before = await (program.account as any).openOrders.fetch(takerOO);
+
+    await placeOrder(taker, takerOO, Bid, 300n, 2n, Limit);
+    await placeOrder(taker, takerOO, Bid, 301n, 3n, Limit);
+    await placeOrder(taker, takerOO, Ask, 700n, 1n, Limit);
+    await placeOrder(taker, takerOO, Ask, 701n, 4n, Limit);
+
+    const mid = await (program.account as any).openOrders.fetch(takerOO);
+    assert.strictEqual(mid.quoteLocked.toNumber(), (300 * 2 + 301 * 3) * Number(TICK));
+    assert.strictEqual(mid.baseLocked.toString(), (5n * LOT).toString());
+
+    const cancelAll = (limit: number) =>
+      program.methods
+        .cancelAll(limit)
+        .accountsPartial({
+          owner: taker.publicKey,
+          market,
+          openOrders: takerOO,
+          bids,
+          asks,
+        })
+        .signers([taker])
+        .rpc();
+
+    // The limit bounds one sweep: 3 of 4 go, one ask survives.
+    await cancelAll(3);
+    const partial = await (program.account as any).orderBookSide.fetch(asks);
+    assert.strictEqual(partial.numOrders, 1);
+
+    // Second call drains the rest; both books empty, locks fully restored.
+    await cancelAll(16);
+    const after = await (program.account as any).openOrders.fetch(takerOO);
+    assert.strictEqual(after.quoteLocked.toNumber(), 0);
+    assert.strictEqual(after.baseLocked.toNumber(), 0);
+    assert.strictEqual(after.quoteFree.toString(), before.quoteFree.toString());
+    assert.strictEqual(after.baseFree.toString(), before.baseFree.toString());
+    const bidBook = await (program.account as any).orderBookSide.fetch(bids);
+    const askBook = await (program.account as any).orderBookSide.fetch(asks);
+    assert.strictEqual(bidBook.numOrders, 0);
+    assert.strictEqual(askBook.numOrders, 0);
+  });
 });

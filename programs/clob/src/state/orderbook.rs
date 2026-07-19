@@ -129,6 +129,20 @@ impl OrderBookSide {
         Ok(true)
     }
 
+    /// Remove the first order owned by `owner`, if any — the sweep
+    /// primitive behind cancel_all. Returns it for fund unlocking.
+    pub fn remove_first_owned(&mut self, owner: &Pubkey) -> Option<Order> {
+        let n = self.num_orders as usize;
+        let idx = self.orders[..n].iter().position(|o| o.owner == *owner)?;
+        let removed = self.orders[idx];
+        for j in idx..n - 1 {
+            self.orders[j] = self.orders[j + 1];
+        }
+        self.orders[n - 1] = Order::zeroed();
+        self.num_orders -= 1;
+        Some(removed)
+    }
+
     /// Remove `order_id`, verifying `owner` actually owns it, and return
     /// the removed order so the caller can unlock the funds backing it.
     pub fn remove(&mut self, order_id: u64, owner: &Pubkey) -> Result<Order> {

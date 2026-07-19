@@ -1,3 +1,4 @@
+pub mod cancel_all;
 pub mod cancel_order;
 pub mod collateral;
 pub mod consume_events;
@@ -13,6 +14,7 @@ pub mod set_oracle_price;
 pub mod update_funding;
 pub mod withdraw;
 
+pub use cancel_all::*;
 pub use cancel_order::*;
 pub use collateral::*;
 pub use consume_events::*;
