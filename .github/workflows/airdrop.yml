@@ -1,0 +1,34 @@
+name: devnet airdrop
+
+# The devnet faucet rate-limits by IP and dev machines burn through the
+# allowance fast; hosted runners usually get through. Dispatch this to
+# top up a devnet wallet (defaults to the deploy payer).
+
+on:
+  workflow_dispatch:
+    inputs:
+      address:
+        description: "recipient pubkey"
+        default: "9fxLpiKzK1zeF42911g5ruKDdTuJFduJSEXcZHh4mCB1"
+      amount:
+        description: "SOL to request"
+        default: "5"
+
+permissions: {}
+
+jobs:
+  airdrop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: request airdrop
+        env:
+          ADDRESS: ${{ inputs.address }}
+          AMOUNT: ${{ inputs.amount }}
+        run: node scripts/airdrop.mjs
