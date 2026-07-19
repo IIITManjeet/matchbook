@@ -273,8 +273,11 @@ export const useTerminal = create<TerminalState>()(
   enterAsGuest: () => set({ guest: true, role: "viewer" }),
 
   connectWallet: () => {
+    // The click itself is the durable intent — record it even if the
+    // chain connect ends up falling back to the simulator (e.g. devnet
+    // RPC limits), so the next visit retries the real connection.
     if (feed instanceof IndexerFeed) {
-      set({ walletConnecting: true });
+      set({ walletConnecting: true, walletAutoConnect: true });
       connectChain(set, get);
     } else {
       set({
@@ -572,7 +575,6 @@ function connectChain(set: Set, get: Get) {
     .then((address) => {
       set(() => ({
         wallet: { connected: true, address },
-        walletAutoConnect: true,
         walletConnecting: false,
         tradingLive: true,
         role: "trader", // optimistic; refined by the on-chain resolution below
