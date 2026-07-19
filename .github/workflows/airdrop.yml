@@ -13,13 +13,16 @@ on:
       amount:
         description: "SOL to request"
         default: "5"
+      rounds:
+        description: "retry rounds (90s apart)"
+        default: "8"
 
 permissions: {}
 
 jobs:
   airdrop:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,4 +34,5 @@ jobs:
         env:
           ADDRESS: ${{ inputs.address }}
           AMOUNT: ${{ inputs.amount }}
+          ROUNDS: ${{ inputs.rounds }}
         run: node scripts/airdrop.mjs
