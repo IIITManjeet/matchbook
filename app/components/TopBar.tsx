@@ -27,6 +27,7 @@ export default function TopBar() {
   const role = useTerminal((s) => s.role);
   const connectWallet = useTerminal((s) => s.connectWallet);
   const disconnectWallet = useTerminal((s) => s.disconnectWallet);
+  const walletConnecting = useTerminal((s) => s.walletConnecting);
 
   const changeColor = stats.change24h >= 0 ? "text-up" : "text-down";
   const isPerp = market.symbol.endsWith("PERP");
@@ -141,9 +142,10 @@ export default function TopBar() {
           <button
             data-testid="connect-wallet"
             onClick={connectWallet}
-            className="rounded-lg bg-brand-grad px-3.5 py-1.5 text-xs font-semibold text-white transition-all hover:shadow-glow"
+            disabled={walletConnecting}
+            className="rounded-lg bg-brand-grad px-3.5 py-1.5 text-xs font-semibold text-white transition-all hover:shadow-glow disabled:opacity-60"
           >
-            Connect Wallet
+            {walletConnecting ? "Connecting…" : "Connect Wallet"}
           </button>
         )}
       </div>

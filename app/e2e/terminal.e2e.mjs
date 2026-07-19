@@ -48,6 +48,10 @@ try {
 
   console.log("terminal loads");
   await page.goto(URL, { waitUntil: "networkidle0", timeout: 30_000 });
+
+  console.log("login gate: enter as guest");
+  await page.waitForSelector('[data-testid="enter-guest"]', { timeout: 10_000 });
+  await page.click('[data-testid="enter-guest"]');
   await page.waitForSelector('button[title^="Set limit price"]', { timeout: 10_000 });
   check(true, "orderbook renders price levels");
   check((await page.$$("canvas")).length > 0, "chart canvas mounted");
@@ -61,10 +65,12 @@ try {
   check(addr.includes("9bez"), `address chip shows truncated pubkey (${addr.trim()})`);
 
   console.log("click-to-quote from the book");
-  const clickedPrice = await page.$eval('button[title^="Set limit price"]', (el) =>
-    el.title.replace("Set limit price ", "").replace(",", ""),
-  );
-  await page.click('button[title^="Set limit price"]');
+  // DOM-dispatched click: book rows shift as the feed ticks, so a
+  // coordinate click can land between rows. Read + click atomically.
+  const clickedPrice = await page.$eval('button[title^="Set limit price"]', (el) => {
+    el.click();
+    return el.title.replace("Set limit price ", "").replace(",", "");
+  });
   const priceValue = await page.$eval('[data-testid="input-price"]', (el) => el.value);
   check(
     Math.abs(parseFloat(priceValue) - parseFloat(clickedPrice)) < 0.005,
@@ -124,6 +130,13 @@ try {
     return page.$$eval("tbody tr", (rows) => rows.map((r) => r.textContent).join("|"));
   })();
   check(!finalBalances.includes("200.00USDC") && finalBalances.includes("85.60"), "cancel released locked funds");
+
+  console.log("session survives a reload");
+  await page.reload({ waitUntil: "networkidle0" });
+  await page.waitForSelector('[data-testid="wallet-address"]', { timeout: 10_000 });
+  check(true, "reload skips the login gate and reconnects the wallet");
+  await page.waitForSelector('button[title^="Set limit price"]', { timeout: 10_000 });
+  check(true, "book streams again after restore");
 
   console.log("feed stays live");
   const tradeCount = async () =>

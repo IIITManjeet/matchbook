@@ -159,9 +159,12 @@ export class IndexerFeed {
     const markets = await IndexerFeed.listMarkets();
     const preferred = target ?? process.env.NEXT_PUBLIC_MARKET;
     const spots = markets.filter((m) => m.kind !== "perp");
-    const market = preferred
-      ? markets.find((m) => m.pubkey === preferred)
-      : spots[spots.length - 1] ?? markets[markets.length - 1];
+    // A stale preference (e.g. a persisted market the seeder has since
+    // replaced) falls back to the default rather than failing the feed.
+    const market =
+      markets.find((m) => m.pubkey === preferred) ??
+      spots[spots.length - 1] ??
+      markets[markets.length - 1];
     if (!market) throw new Error("indexer has no markets");
     return new IndexerFeed(market);
   }

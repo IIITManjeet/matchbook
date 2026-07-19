@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { useTerminal } from "@/lib/store";
 
 const FEATURES = [
@@ -29,12 +28,8 @@ export default function ConnectScreen() {
   const feedSource = useTerminal((s) => s.feedSource);
   const connectWallet = useTerminal((s) => s.connectWallet);
   const enterAsGuest = useTerminal((s) => s.enterAsGuest);
-  const [connecting, setConnecting] = useState(false);
-
-  const connect = () => {
-    setConnecting(true);
-    connectWallet(); // the store flips `wallet.connected` when it lands
-  };
+  // Store-tracked so the button recovers if the connection fails.
+  const connecting = useTerminal((s) => s.walletConnecting);
 
   return (
     <div className="flex min-h-screen items-center justify-center overflow-y-auto p-4 sm:p-6">
@@ -71,7 +66,7 @@ export default function ConnectScreen() {
         <div className="mt-8 flex flex-col items-center gap-3">
           <button
             data-testid="connect-wallet"
-            onClick={connect}
+            onClick={connectWallet}
             disabled={connecting}
             className="w-full max-w-72 rounded-xl bg-brand-grad py-3 text-sm font-bold text-white transition-all hover:shadow-glow disabled:opacity-60"
           >

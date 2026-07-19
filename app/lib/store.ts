@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 // Type-only: the real module (and its heavy anchor/web3 deps) loads
 // lazily on wallet connect, keeping it out of the initial bundle.
 import type { ChainClient, PerpClient } from "./chain";
@@ -54,6 +55,20 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 export type FeedSource = "indexer" | "mock";
 
+export type ToastKind = "error" | "success" | "info";
+export interface Toast {
+  id: string;
+  kind: ToastKind;
+  text: string;
+}
+let toastSeq = 0;
+
+/** Order-ticket defaults remembered across visits. */
+export interface TicketPrefs {
+  side: Side;
+  orderType: OrderType;
+}
+
 const SIM_ADDRESS = "9bezj1VAw4gTMKonswkKioRdsttD4UowXh87Fcw9Wtr2";
 const SIM_BALANCES: Record<string, Balance> = {
   SOL: { total: 84.6, locked: 0 },
@@ -61,6 +76,8 @@ const SIM_BALANCES: Record<string, Balance> = {
 };
 
 interface TerminalState {
+  /** true once the persisted session has been read back from localStorage */
+  hydrated: boolean;
   market: MarketInfo;
   markets: MarketListing[];
   selectedMarket: string | null; // indexer pubkey, null in sim mode
@@ -75,6 +92,10 @@ interface TerminalState {
   feedSource: FeedSource | null;
 
   wallet: { connected: boolean; address: string | null };
+  /** persisted intent: reconnect the wallet automatically on the next visit */
+  walletAutoConnect: boolean;
+  /** true while a wallet connection is in flight (incl. session restore) */
+  walletConnecting: boolean;
   /** true when orders are real signed transactions (burner wallet + validator) */
   tradingLive: boolean;
   /** guest browsing: past the login screen without a wallet, read-only */
@@ -93,6 +114,11 @@ interface TerminalState {
   /** set when the user clicks a book/trade price; consumed by the order form */
   quotedPrice: number | null;
 
+  /** transient notifications (tx failures/acks); rendered by <Toasts /> */
+  toasts: Toast[];
+  /** last-used order ticket side/type, persisted across visits */
+  prefs: TicketPrefs;
+
   startFeed: () => void;
   switchMarket: (pubkey: string) => void;
   enterAsGuest: () => void;
@@ -100,6 +126,9 @@ interface TerminalState {
   disconnectWallet: () => void;
   quotePrice: (price: number) => void;
   clearQuotedPrice: () => void;
+  pushToast: (kind: ToastKind, text: string) => void;
+  dismissToast: (id: string) => void;
+  setPrefs: (prefs: Partial<TicketPrefs>) => void;
   placeOrder: (side: Side, type: OrderType, price: number, size: number) => void;
   cancelOrder: (id: string) => void;
   openPerpPosition: (side: Side, size: number) => void;
@@ -118,7 +147,38 @@ function listingSymbol(kind: "spot" | "perp") {
   return kind === "perp" ? PERP_MARKET.symbol : SPOT_MARKET.symbol;
 }
 
-export const useTerminal = create<TerminalState>((set, get) => ({
+/**
+ * Persistence boundary. Three kinds of state live in this store and only
+ * one of them is worth writing to disk:
+ *
+ *  - market data (book, tape, candles, stats) — the indexer's, re-streamed
+ *    on every load; persisting it would only show stale prices.
+ *  - account state (balances, orders, fills, position, role) — the chain's,
+ *    re-derived on connect; persisting it would let it drift from truth.
+ *  - session state (how the user entered, which market they were on, how
+ *    their ticket was configured) — the user's. This is all we persist.
+ */
+const PERSISTED = (s: TerminalState) => ({
+  guest: s.guest,
+  walletAutoConnect: s.walletAutoConnect,
+  selectedMarket: s.selectedMarket,
+  prefs: s.prefs,
+});
+
+/** SSR / node tests: no localStorage, persist becomes a no-op. */
+const noopStorage: Storage = {
+  length: 0,
+  clear: () => {},
+  getItem: () => null,
+  key: () => null,
+  removeItem: () => {},
+  setItem: () => {},
+};
+
+export const useTerminal = create<TerminalState>()(
+  persist(
+    (set, get) => ({
+  hydrated: false,
   market: SPOT_MARKET,
   markets: [],
   selectedMarket: null,
@@ -133,6 +193,8 @@ export const useTerminal = create<TerminalState>((set, get) => ({
   feedSource: null,
 
   wallet: { connected: false, address: null },
+  walletAutoConnect: false,
+  walletConnecting: false,
   tradingLive: false,
   guest: false,
   role: "viewer",
@@ -143,18 +205,32 @@ export const useTerminal = create<TerminalState>((set, get) => ({
   position: null,
   fundingBps: null,
   quotedPrice: null,
+  toasts: [],
+  prefs: { side: "buy", orderType: "limit" },
 
   startFeed: () => {
     if (feed || feedStarting) return;
     feedStarting = true;
 
     // Prefer the real indexer; fall back to the simulator when it's not up.
-    IndexerFeed.connect()
+    // A restored session carries the last market and reconnects the wallet.
+    const restore = get().walletAutoConnect;
+    if (restore) set({ walletConnecting: true });
+    IndexerFeed.connect(get().selectedMarket ?? undefined)
       .then((f) => {
         attachFeed(set, get, f, "indexer");
         void refreshMarketList(set);
+        if (restore) connectChain(set, get);
       })
-      .catch(() => attachFeed(set, get, new MockFeed(), "mock"));
+      .catch(() => {
+        attachFeed(set, get, new MockFeed(), "mock");
+        if (restore)
+          set({
+            wallet: { connected: true, address: SIM_ADDRESS },
+            role: "trader",
+            walletConnecting: false,
+          });
+      });
   },
 
   switchMarket: (pubkey) => {
@@ -180,6 +256,7 @@ export const useTerminal = create<TerminalState>((set, get) => ({
       fundingBps: null,
       feedLive: false,
       tradingLive: false,
+      walletConnecting: wallet.connected,
     });
 
     IndexerFeed.connect(pubkey)
@@ -187,16 +264,24 @@ export const useTerminal = create<TerminalState>((set, get) => ({
         attachFeed(set, get, f, "indexer");
         if (wallet.connected) connectChain(set, get);
       })
-      .catch((err) => console.error("market switch failed:", err));
+      .catch((err) => {
+        console.error("market switch failed:", err);
+        get().pushToast("error", `Market switch failed: ${errText(err)}`);
+      });
   },
 
   enterAsGuest: () => set({ guest: true, role: "viewer" }),
 
   connectWallet: () => {
     if (feed instanceof IndexerFeed) {
+      set({ walletConnecting: true });
       connectChain(set, get);
     } else {
-      set({ wallet: { connected: true, address: SIM_ADDRESS }, role: "trader" });
+      set({
+        wallet: { connected: true, address: SIM_ADDRESS },
+        role: "trader",
+        walletAutoConnect: true,
+      });
     }
   },
 
@@ -206,6 +291,8 @@ export const useTerminal = create<TerminalState>((set, get) => ({
     perp = null;
     set({
       wallet: { connected: false, address: null },
+      walletAutoConnect: false,
+      walletConnecting: false,
       tradingLive: false,
       guest: false,
       role: "viewer",
@@ -219,6 +306,16 @@ export const useTerminal = create<TerminalState>((set, get) => ({
 
   quotePrice: (price) => set({ quotedPrice: price }),
   clearQuotedPrice: () => set({ quotedPrice: null }),
+
+  pushToast: (kind, text) => {
+    const id = `toast-${++toastSeq}`;
+    set((s) => ({ toasts: [...s.toasts.slice(-3), { id, kind, text }] }));
+    setTimeout(() => get().dismissToast(id), 6_000);
+  },
+
+  dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+
+  setPrefs: (prefs) => set((s) => ({ prefs: { ...s.prefs, ...prefs } })),
 
   placeOrder: (side, type, price, size) => {
     const market = get().market;
@@ -241,8 +338,14 @@ export const useTerminal = create<TerminalState>((set, get) => ({
       };
       set((s) => ({ openOrders: [order, ...s.openOrders] }));
       c.placeOrder(side, type, price, size, lastPrice)
-        .then(() => refreshChainState(set))
-        .catch((err) => console.error("place_order failed:", err))
+        .then(() => {
+          get().pushToast("success", `${side === "buy" ? "Buy" : "Sell"} ${size} ${market.base} placed on-chain`);
+          return refreshChainState(set);
+        })
+        .catch((err) => {
+          console.error("place_order failed:", err);
+          get().pushToast("error", `Order failed: ${errText(err)}`);
+        })
         .finally(() => {
           // Drop the optimistic row; the poll shows the real one (if it rested).
           set((s) => ({ openOrders: s.openOrders.filter((o) => o.id !== id) }));
@@ -302,7 +405,10 @@ export const useTerminal = create<TerminalState>((set, get) => ({
       chain
         .cancelOrder(order.side, Number(order.id))
         .then(() => refreshChainState(set))
-        .catch((err) => console.error("cancel_order failed:", err));
+        .catch((err) => {
+          console.error("cancel_order failed:", err);
+          get().pushToast("error", `Cancel failed: ${errText(err)}`);
+        });
       return;
     }
 
@@ -327,16 +433,28 @@ export const useTerminal = create<TerminalState>((set, get) => ({
     const delta = side === "buy" ? size : -size;
     perp
       .openPosition(delta)
-      .then(() => refreshChainState(set))
-      .catch((err) => console.error("open_position failed:", err));
+      .then(() => {
+        get().pushToast("success", `${side === "buy" ? "Long" : "Short"} ${size} opened`);
+        return refreshChainState(set);
+      })
+      .catch((err) => {
+        console.error("open_position failed:", err);
+        get().pushToast("error", `Position failed: ${errText(err)}`);
+      });
   },
 
   closePerpPosition: () => {
     if (!perp) return;
     perp
       .closePosition()
-      .then(() => refreshChainState(set))
-      .catch((err) => console.error("close position failed:", err));
+      .then(() => {
+        get().pushToast("success", "Position closed");
+        return refreshChainState(set);
+      })
+      .catch((err) => {
+        console.error("close position failed:", err);
+        get().pushToast("error", `Close failed: ${errText(err)}`);
+      });
   },
 
   depositCollateral: (amount) => {
@@ -344,7 +462,10 @@ export const useTerminal = create<TerminalState>((set, get) => ({
     perp
       .depositCollateral(amount)
       .then(() => refreshChainState(set))
-      .catch((err) => console.error("deposit_collateral failed:", err));
+      .catch((err) => {
+        console.error("deposit_collateral failed:", err);
+        get().pushToast("error", `Deposit failed: ${errText(err)}`);
+      });
   },
 
   withdrawCollateral: (amount) => {
@@ -352,9 +473,35 @@ export const useTerminal = create<TerminalState>((set, get) => ({
     perp
       .withdrawCollateral(amount)
       .then(() => refreshChainState(set))
-      .catch((err) => console.error("withdraw_collateral failed:", err));
+      .catch((err) => {
+        console.error("withdraw_collateral failed:", err);
+        get().pushToast("error", `Withdraw failed: ${errText(err)}`);
+      });
   },
-}));
+    }),
+    {
+      name: "matchbook.session",
+      version: 1,
+      storage: createJSONStorage(() =>
+        typeof window === "undefined" ? noopStorage : window.localStorage,
+      ),
+      partialize: PERSISTED,
+      // Next.js prerenders this page; hydrating from localStorage during
+      // render would mismatch the server HTML. The page calls
+      // `useTerminal.persist.rehydrate()` in an effect instead.
+      skipHydration: true,
+      onRehydrateStorage: () => () => {
+        useTerminal.setState({ hydrated: true });
+      },
+    },
+  ),
+);
+
+/** Shorten an error for a toast; full detail stays in the console. */
+function errText(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.length > 120 ? `${msg.slice(0, 117)}…` : msg;
+}
 
 type Set = (fn: (s: TerminalState) => Partial<TerminalState>) => void;
 type Get = () => TerminalState;
@@ -425,6 +572,8 @@ function connectChain(set: Set, get: Get) {
     .then((address) => {
       set(() => ({
         wallet: { connected: true, address },
+        walletAutoConnect: true,
+        walletConnecting: false,
         tradingLive: true,
         role: "trader", // optimistic; refined by the on-chain resolution below
         openOrders: [],
@@ -435,7 +584,12 @@ function connectChain(set: Set, get: Get) {
     })
     .catch((err) => {
       console.error("on-chain wallet unavailable, using simulator:", err);
-      set(() => ({ wallet: { connected: true, address: SIM_ADDRESS }, role: "trader" }));
+      get().pushToast("info", "On-chain wallet unavailable — trading in simulator");
+      set(() => ({
+        wallet: { connected: true, address: SIM_ADDRESS },
+        walletConnecting: false,
+        role: "trader",
+      }));
     });
 }
 

@@ -150,8 +150,10 @@ export default function OrderBook() {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col justify-end overflow-hidden">
-        {[...askRows].reverse().map((l) => (
-          <BookRow key={`a-${l.price}`} level={l} side="sell" maxTotal={maxTotal} onClick={() => quotePrice(l.price)} />
+        {/* keyed by ladder slot, not price: rows update in place each tick,
+            so a click can't straddle a node swap and get lost */}
+        {[...askRows].reverse().map((l, i) => (
+          <BookRow key={`a-${i}`} level={l} side="sell" maxTotal={maxTotal} onClick={() => quotePrice(l.price)} />
         ))}
       </div>
 
@@ -163,8 +165,8 @@ export default function OrderBook() {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden pb-1">
-        {bidRows.map((l) => (
-          <BookRow key={`b-${l.price}`} level={l} side="buy" maxTotal={maxTotal} onClick={() => quotePrice(l.price)} />
+        {bidRows.map((l, i) => (
+          <BookRow key={`b-${i}`} level={l} side="buy" maxTotal={maxTotal} onClick={() => quotePrice(l.price)} />
         ))}
       </div>
     </div>

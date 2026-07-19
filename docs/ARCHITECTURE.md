@@ -105,6 +105,35 @@ terminal where color is information.
 - **Keyboard-first:** ⌘K command palette (switch market, place order),
   hotkeys on the ticket. It should feel like software for professionals.
 
+### Frontend state — one store, three kinds of truth
+
+All terminal state lives in a single Zustand store (`app/lib/store.ts`).
+Redux would buy nothing here — there is one consumer surface, no
+middleware pipeline worth composing, and the interesting decision is not
+which library holds the state but **who owns each piece of it**:
+
+| Kind | Examples | Owner | On reload |
+|---|---|---|---|
+| Market data | book, tape, candles, 24h stats | the indexer | re-streamed |
+| Account state | balances, open orders, fills, position, role | the chain | re-derived on connect |
+| Session state | guest/wallet entry, last market, ticket side/type | the user | **persisted** |
+
+Only the third kind is written to `localStorage` (via `zustand/persist`
+with a `partialize` allow-list). Persisting the first two would show
+stale prices or let balances drift from on-chain truth — the cache would
+be a liability, so it is never created. A reload therefore restores *the
+user's session* (straight back into the terminal, same market, wallet
+reconnecting in the background) while every number on screen is
+re-earned from the indexer and the chain.
+
+Rehydration is deferred to a client effect (`skipHydration`) because the
+page is statically prerendered — reading `localStorage` during render
+would mismatch the server HTML. The boot order is: rehydrate session →
+connect feed to the remembered market (falling back to the default if
+the seeder has since replaced it) → auto-reconnect the wallet if the
+last session had one. Transaction failures surface as toasts; the
+console keeps the full error.
+
 ## Perpetual futures
 
 Perps live in the same program as the spot CLOB but trade differently:

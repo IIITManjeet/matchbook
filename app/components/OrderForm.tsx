@@ -39,9 +39,15 @@ export default function OrderForm() {
   const position = useTerminal((s) => s.position);
   const quotedPrice = useTerminal((s) => s.quotedPrice);
   const clearQuotedPrice = useTerminal((s) => s.clearQuotedPrice);
+  const prefs = useTerminal((s) => s.prefs);
+  const setPrefs = useTerminal((s) => s.setPrefs);
 
-  const [side, setSide] = useState<Side>("buy");
-  const [type, setType] = useState<OrderType>("limit");
+  // Side/type live in the store (persisted) so the ticket comes back the
+  // way it was left; price/size are transactional and stay local.
+  const side = prefs.side;
+  const type = prefs.orderType;
+  const setSide = (s: Side) => setPrefs({ side: s });
+  const setType = (t: OrderType) => setPrefs({ orderType: t });
   const [price, setPrice] = useState("");
   const [size, setSize] = useState("");
 
@@ -50,11 +56,11 @@ export default function OrderForm() {
   // clicking a price in the book or tape loads it into the form
   useEffect(() => {
     if (quotedPrice !== null) {
-      setType("limit");
+      setPrefs({ orderType: "limit" });
       setPrice(quotedPrice.toFixed(market.priceDecimals));
       clearQuotedPrice();
     }
-  }, [quotedPrice, market.priceDecimals, clearQuotedPrice]);
+  }, [quotedPrice, market.priceDecimals, clearQuotedPrice, setPrefs]);
 
   const priceNum = type === "market" || isPerp ? lastPrice : parseFloat(price) || 0;
   const sizeNum = parseFloat(size) || 0;

@@ -9,22 +9,40 @@ import TradesFeed from "@/components/TradesFeed";
 import OrderForm from "@/components/OrderForm";
 import BottomPanel from "@/components/BottomPanel";
 import ConnectScreen from "@/components/ConnectScreen";
+import Toasts from "@/components/Toasts";
 
 const card =
   "min-h-0 overflow-hidden rounded-xl border border-line bg-panel shadow-card";
 
 export default function Terminal() {
   const startFeed = useTerminal((s) => s.startFeed);
+  const hydrated = useTerminal((s) => s.hydrated);
   const connected = useTerminal((s) => s.wallet.connected);
+  const autoConnect = useTerminal((s) => s.walletAutoConnect);
   const guest = useTerminal((s) => s.guest);
 
+  // Boot: restore the persisted session (guest/wallet entry, last market,
+  // ticket prefs) first so the feed connects to the right market, then
+  // start streaming. Rehydration is a deferred effect because this page
+  // is prerendered — reading localStorage during render would mismatch.
   useEffect(() => {
-    startFeed();
+    void Promise.resolve(useTerminal.persist.rehydrate()).then(startFeed);
   }, [startFeed]);
 
-  // Login gate: wallet or explicit guest entry. Market data starts
-  // loading behind the screen either way.
-  if (!connected && !guest) return <ConnectScreen />;
+  // One blank-panel frame while localStorage is read back.
+  if (!hydrated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="flex h-14 w-14 animate-pulse items-center justify-center rounded-2xl bg-brand-grad text-2xl font-black text-white shadow-glow">
+          M
+        </div>
+      </div>
+    );
+  }
+
+  // Login gate: wallet, explicit guest entry, or a restored session that
+  // is reconnecting its wallet. Market data loads behind the screen.
+  if (!connected && !guest && !autoConnect) return <ConnectScreen />;
 
   // Three layouts: single-column stack (mobile, page scrolls),
   // two-column (tablet, page scrolls), full app grid (xl+, no scroll).
@@ -50,6 +68,7 @@ export default function Terminal() {
           </section>
         </main>
       </div>
+      <Toasts />
     </div>
   );
 }
