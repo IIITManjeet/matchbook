@@ -11,7 +11,19 @@ candles from a hosted indexer tailing the on-chain program.
 
 **Program ID (devnet):** `9bezj1VAw4gTMKonswkKioRdsttD4UowXh87Fcw9Wtr2`
 
-![Matchbook trading terminal — live SOL/USDC book, tape and candles from the hosted indexer](docs/terminal.png)
+![Matchbook trading terminal — live SOL/USDC book, tape and candles from the hosted indexer](docs/media/terminal.png)
+
+<p align="center">
+  <img src="docs/media/orderbook.png" alt="Live order book — depth-visualized ladder with spread, click-to-quote price levels" width="430">
+</p>
+<p align="center"><em>Live order book — depth bars per level, spread readout, click any row to load the price into the ticket.</em></p>
+
+![Architecture — Next.js terminal, Rust indexer + Postgres, Anchor program as source of truth](docs/media/architecture.png)
+
+![SOL-PERP position — entry/mark, unrealized PnL, liquidation price and accrued funding](docs/media/positions-funding.png)
+<p align="center"><em>Perp position panel — netted position with VWAP entry, mark-to-market PnL and funding accrual.</em></p>
+
+![Matching engine flow — place_order → zero-copy match → event queue → consume_events crank → maker settlement](docs/media/matching-engine-flow.png)
 
 ## Highlights
 
