@@ -11,6 +11,8 @@ candles from a hosted indexer tailing the on-chain program.
 
 **Program ID (devnet):** `9bezj1VAw4gTMKonswkKioRdsttD4UowXh87Fcw9Wtr2`
 
+![Matchbook trading terminal — live SOL/USDC book, tape and candles from the hosted indexer](docs/terminal.png)
+
 ## Highlights
 
 - **On-chain CLOB** — markets with PDA token vaults, free/locked balance
