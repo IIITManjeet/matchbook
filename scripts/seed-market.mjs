@@ -50,9 +50,10 @@ const isLocal = RPC.includes("127.0.0.1") || RPC.includes("localhost");
 
 const provider = new anchor.AnchorProvider(connection, new anchor.Wallet(payer), {
   commitment: "confirmed",
-  // Preflight simulation doubles the RPC load, which the public devnet
-  // endpoint punishes with 429s. Program errors still surface on confirm.
-  skipPreflight: !isLocal,
+  // Preflight simulation doubles the RPC load, but the public devnet
+  // endpoint rejects skipPreflight sends outright ("Unknown action
+  // 'undefined'"), so it must stay opt-in for RPCs that allow it.
+  skipPreflight: process.env.SKIP_PREFLIGHT === "1",
 });
 anchor.setProvider(provider);
 const program = new anchor.Program(idl, provider);

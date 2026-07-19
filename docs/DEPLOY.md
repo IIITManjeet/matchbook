@@ -60,7 +60,9 @@ Devnet knobs (all optional):
   addresses live at bytes 8..72 of the market account if you lost them.
 
 The seeder now retries 429s with backoff and paces setup transactions on
-public clusters; it also skips preflight there to halve the RPC load.
+public clusters. `SKIP_PREFLIGHT=1` halves the RPC load by skipping
+simulation, but the public devnet endpoint rejects such sends with
+`Unknown action 'undefined'` — leave it unset there.
 
 ## 3. Host the indexer on Render (free tier)
 
