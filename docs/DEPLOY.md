@@ -1,133 +1,107 @@
-# Deploying the live terminal (devnet + hosted indexer)
+# Deployment — the live stack
 
-The GitHub Pages site is static. Its market data comes from the **indexer**
-(`app/lib/indexer.ts` → `NEXT_PUBLIC_INDEXER_URL`), not from RPC. To show live
-data on the public site you need three things reachable over HTTPS/WSS:
+The public terminal is a static export on GitHub Pages. Its market data
+comes from the **indexer** (`app/lib/indexer.ts` →
+`NEXT_PUBLIC_INDEXER_URL`), not from RPC, so the live stack is four
+pieces:
 
-1. The CLOB program deployed to a public cluster (devnet).
-2. The indexer + Postgres hosted at a public HTTPS URL.
-3. The Pages build pointed at both via repo variables.
-
-The repo already contains the container/config for step 2 and the workflow
-wiring for step 3. The commands below are the parts only you can run (they need
-your Solana keypair and a Render account).
-
----
+| Piece | Where | Notes |
+| --- | --- | --- |
+| CLOB program | Solana devnet | `9bezj1VA…Wtr2`, pinned in `Anchor.toml` |
+| Indexer | Render (free tier, Docker) | `render.yaml` blueprint at the repo root |
+| Postgres | Neon (free tier) | TLS; the indexer uses rustls throughout |
+| Terminal | GitHub Pages | built by `.github/workflows/pages.yml` |
 
 ## 1. Deploy the program to devnet
 
-Anchor builds are WSL-only on this machine. In WSL, from the repo root:
+Anchor builds need Linux (WSL works). From the repo root:
 
 ```bash
 solana config set --url https://api.devnet.solana.com
-solana airdrop 5                 # deployer funds; repeat if rate-limited
+solana airdrop 5                 # deployer funds; faucet.solana.com if throttled
 anchor build
 anchor deploy --provider.cluster devnet
 ```
 
-`Anchor.toml` already pins the program id `9bezj1VA…Wtr2` under
-`[programs.devnet]`, so it deploys to that address (the deployer must hold
-`target/deploy/clob-keypair.json`). If `solana airdrop` is throttled, use
-<https://faucet.solana.com>.
+`Anchor.toml` pins the program id under `[programs.devnet]`, so the
+deploy lands at that address (the deployer must hold
+`target/deploy/clob-keypair.json`).
 
-## 2. Seed a market on devnet
+## 2. Seed a market
 
-The seeder now takes a pre-funded payer (devnet can't airdrop 100 SOL) and
-funds the maker/taker/burner by transfer. Fund a keypair first:
+The seeder takes a pre-funded payer (devnet can't airdrop 100 SOL) and
+funds the maker/taker/burner actors by transfer:
 
 ```bash
-solana-keygen new -o seed-payer.json          # or reuse your deployer key
-solana airdrop 5 $(solana address -k seed-payer.json) --url devnet
-
 ANCHOR_PROVIDER_URL=https://api.devnet.solana.com \
-PAYER_KEYPAIR=seed-payer.json \
+PAYER_KEYPAIR=path/to/funded-keypair.json \
 node scripts/seed-market.mjs 5                 # 5 minutes of crossing orders
 ```
 
-Note the printed `market:` pubkey — you can pin it later as
-`NEXT_PUBLIC_MARKET`, otherwise the terminal auto-picks the newest spot market.
-Devnet is slower than localnet; a short run still produces a book, tape, and
-candles. Re-run to add activity.
-
 Devnet knobs (all optional):
 
-- `FUND_SOL=0.05` — SOL transferred to each actor (default 2). The actors
-  only pay tx fees, so this can be tiny when the payer is low and the
-  faucet (<https://faucet.solana.com>) is throttling.
-- `BASE_MINT=… QUOTE_MINT=…` — resume a run that died mid-way (public RPC
-  429s). The seeder skips `initMarket`/`createOpenOrders` for accounts
-  that already exist, so the rent a dead run paid isn't wasted. The mint
-  addresses live at bytes 8..72 of the market account if you lost them.
+- `FUND_SOL=0.05` — SOL transferred to each actor (default 2). Actors
+  only pay open-orders rent, so this can be tiny when the faucet is
+  throttling.
+- `BASE_MINT=… QUOTE_MINT=…` — resume a run that died mid-way. The
+  seeder skips `initMarket`/`createOpenOrders` for accounts that already
+  exist, so rent a dead run paid isn't wasted.
+- `SKIP_PREFLIGHT=1` — halves the RPC load by skipping simulation, but
+  the public devnet endpoint rejects such sends (`Unknown action
+  'undefined'`) — leave it unset there.
 
-The seeder now retries 429s with backoff and paces setup transactions on
-public clusters. `SKIP_PREFLIGHT=1` halves the RPC load by skipping
-simulation, but the public devnet endpoint rejects such sends with
-`Unknown action 'undefined'` — leave it unset there.
+The seeder retries 429s with backoff and paces setup transactions on
+public clusters. Re-run it (or a fees-only variant that crosses the
+existing grid) whenever the tape should show fresh activity.
 
-## 3. Host the indexer on Render (free tier)
+## 3. Host the indexer
 
-`render.yaml` at the repo root is a Render Blueprint for the indexer
-(Docker build of `indexer/`, devnet RPC, `PROGRAM_ID`, `/health` check).
-In the [Render dashboard](https://dashboard.render.com):
+`render.yaml` is a Render Blueprint: Docker build of `indexer/`, free
+plan, `/health` check, devnet RPC and program id preset. Create a
+Postgres first — [Neon](https://neon.tech)'s free tier is permanent
+(Render's own free Postgres deletes itself after 30 days) — then create
+the Blueprint and paste the connection string when prompted for
+`DATABASE_URL`. Migrations apply themselves on boot via
+`sqlx::migrate!`.
 
-1. **New → Postgres** — name it `matchbook-db`, region **Singapore**,
-   plan **Free**. Copy its **Internal Database URL** once created.
-   (Render's free Postgres is deleted after 30 days; use
-   [Neon](https://neon.tech)'s free tier instead if the site should
-   outlive that — the indexer speaks TLS, both work.)
-2. **New → Blueprint** — connect the GitHub repo. Render reads
-   `render.yaml` and prompts for `DATABASE_URL`; paste the URL from
-   step 1. Deploy.
-
-Migrations apply themselves on boot via `sqlx::migrate!`. Verify:
+Verify:
 
 ```bash
-curl https://<your-service>.onrender.com/health       # {"ok":true}
-curl https://<your-service>.onrender.com/markets      # the market you seeded
+curl https://<service>.onrender.com/health       # {"ok":true}
+curl https://<service>.onrender.com/markets      # the market you seeded
 ```
 
-If `/markets` is empty, the indexer hasn't caught up — check the service
-logs in the dashboard. Env vars (RPC, program id) can be changed there
-without a rebuild.
+**Spin-down**: Render free instances stop after ~15 idle minutes, which
+would halt log ingestion. An external uptime monitor (e.g. UptimeRobot,
+free) hitting `/health` every 5 minutes keeps the service warm and
+doubles as downtime alerting. `.github/workflows/keepalive.yml` does
+the same from GitHub Actions as a backup, but scheduled workflows get
+throttled to roughly hourly, so don't rely on it alone.
 
-**Spin-down**: free instances stop after ~15 min without inbound traffic,
-which would halt log ingestion. `.github/workflows/keepalive.yml` pings
-`/health` every 5 minutes to prevent this — it activates once the
-`NEXT_PUBLIC_INDEXER_URL` repo variable (step 4) is set, and GitHub
-disables it after 60 days without repo activity (any commit re-arms it).
+## 4. Point the Pages site at the indexer
 
-(`indexer/fly.toml` remains for the paid Fly.io alternative — always-on
-machine, no keep-alive needed.)
+Repo → **Settings → Secrets and variables → Actions → Variables**:
 
-## 4. Point the Pages site at the live endpoints
+| Name                      | Value                          |
+| ------------------------- | ------------------------------ |
+| `NEXT_PUBLIC_INDEXER_URL` | `https://<service>.onrender.com` |
 
-Repo → **Settings → Secrets and variables → Actions → Variables** → New variable:
+Re-run the Pages workflow (or push). The static bundle inlines the URL
+at build time and derives `wss://…/ws` from it automatically. When the
+variable is unset the terminal falls back to its built-in simulator
+feed.
 
-| Name                      | Value                                  |
-| ------------------------- | -------------------------------------- |
-| `NEXT_PUBLIC_INDEXER_URL` | `https://<your-app>.fly.dev`           |
-| `NEXT_PUBLIC_RPC_URL`     | `https://api.devnet.solana.com` (default; optional) |
+## Notes
 
-Then re-run the **deploy terminal to github pages** workflow (Actions → Run
-workflow, or push any commit). The static bundle inlines these at build time;
-the app derives `wss://…/ws` from the HTTPS indexer URL automatically.
-
-When `NEXT_PUBLIC_INDEXER_URL` is unset the terminal falls back to the mock
-feed — which is the current state.
-
----
-
-## Notes & caveats
-
-- **Mixed content**: Pages is HTTPS, so both URLs must be HTTPS/WSS. Render
-  terminates TLS at the edge and proxies to the container's plain `:8080`.
-- **Trading vs viewing**: viewer/guest mode only needs the indexer. On-chain
-  trading through the committed `app/lib/dev-wallet.json` burner also requires
-  that wallet to be funded + deposited on devnet — the seeder does this for the
-  market it creates. Real users would connect their own wallet instead.
-- **Cost**: free on Render's free tier (750 instance-hours/month covers one
-  always-up service) as long as the keep-alive ping keeps it from idling.
-  The free Render Postgres expires after 30 days — swap `DATABASE_URL` to a
-  free Neon database for something permanent.
-- **Keeping data fresh**: devnet has no organic flow on this market, so re-run
-  the seeder (step 2) whenever you want new trades/candles.
+- **Mixed content**: Pages is HTTPS, so the indexer URL must be
+  HTTPS/WSS. Render terminates TLS at the edge and proxies to the
+  container's plain `:8080`.
+- **Trading vs viewing**: viewer/guest mode only needs the indexer.
+  Trading through the committed burner wallet also requires that wallet
+  funded + deposited on devnet — the seeder does this. Real users would
+  connect their own wallet.
+- **Cost**: the whole stack runs on free tiers — Pages, Render (750
+  instance-hours/month covers one always-warm service), Neon, and the
+  uptime monitor.
+- **Data freshness**: devnet has no organic flow, so re-run the seeder
+  (step 2) whenever you want new trades and candles.

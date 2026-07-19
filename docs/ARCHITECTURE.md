@@ -30,7 +30,7 @@ Market            PDA ["market", base_mint, quote_mint]
 ├─ quote_vault    PDA ["quote_vault", market]  token acct, authority = market
 ├─ bids           PDA ["bids", market]         zero-copy OrderBookSide
 ├─ asks           PDA ["asks", market]         zero-copy OrderBookSide
-└─ (M2) event_q   PDA ["events", market]       zero-copy ring buffer
+└─ event_q        PDA ["events", market]       zero-copy ring buffer
 
 OpenOrders        PDA ["open_orders", market, owner]   one per user per market
 ```
@@ -42,20 +42,20 @@ Design decisions and the reasoning behind them:
   vault transfers (`invoke_signed` with the market seeds), and it only
   does so in `withdraw` against a sufficient *free* balance.
 - **Free vs locked balances.** Placing an order moves `free → locked`;
-  cancelling moves it back; (M2) fills move locked funds between the two
+  cancelling moves it back; fills move locked funds between the two
   currencies. Locked funds can't be withdrawn, so every resting order is
   always fully collateralized — no failed settlements by construction.
 - **Zero-copy orderbook.** The book is ~7.2 KB; borsh-deserializing it on
   every instruction would blow the compute budget, so Anchor casts the
   raw bytes in place (`AccountLoader`, `load`/`load_mut`/`load_init`).
-  M1 uses a sorted array (O(n) insert, 128 orders/side, dead simple to
-  verify); the M2 stretch goal swaps in a crit-bit slab like Serum's
-  without changing any instruction interface.
+  The book is a sorted array (O(n) insert, 128 orders/side, dead simple
+  to verify); a crit-bit slab like Serum's could be swapped in without
+  changing any instruction interface.
 - **Integer-only math.** Prices are in *ticks*, quantities in *lots*
   (see `state/market.rs`). All conversions are `checked_*`; overflow is
   a clean error, never a wrap.
 
-## Why matching needs an event queue (M2 — implemented)
+## Why matching needs an event queue
 
 When a taker order fills against a resting maker order, the maker's
 proceeds must be credited to the maker's `OpenOrders` — but that account
@@ -69,13 +69,13 @@ apply the credits. This is the single most instructive piece of Solana
 architecture in the project — it exists purely because of the account
 model, and it's why every serious Solana protocol runs off-chain workers.
 
-## Off-chain stack (M3)
+## Off-chain stack
 
 - **Indexer (Rust, tokio + Axum):** subscribes to program logs over
   websocket, decodes Anchor events, writes fills/orders/balances to
   Postgres, maintains candles. Serves REST (history, markets) and fans
   out websocket streams (book deltas, trades) to the frontend.
-- **Frontend (Next.js 15 + Tailwind + shadcn/ui):** wallet adapter for
+- **Frontend (Next.js 14 + Tailwind + shadcn/ui):** wallet adapter for
   signing, TradingView `lightweight-charts` for candles, custom orderbook
   ladder component. All reads come from the indexer; only transactions
   touch RPC.
@@ -105,12 +105,12 @@ terminal where color is information.
 - **Keyboard-first:** ⌘K command palette (switch market, place order),
   hotkeys on the ticket. It should feel like software for professionals.
 
-## Perpetual futures (M4 — implemented)
+## Perpetual futures
 
 Perps live in the same program as the spot CLOB but trade differently:
 positions fill against an **oracle price**, not an orderbook. That keeps
-M4's lessons — margin, funding, liquidation — front and center instead
-of duplicating the matching engine.
+the interesting problems — margin, funding, liquidation — front and
+center instead of duplicating the matching engine.
 
 - **Oracle.** A keeper-pushed price on the `PerpMarket` account, gated
   to the market admin, with a 60-second freshness rule enforced on every
@@ -145,12 +145,3 @@ of duplicating the matching engine.
   tick/lot scheme on ingest, so candles, trades and the terminal's unit
   conversion work unchanged; oracle ticks drive zero-volume candles so
   the chart moves even when nobody trades.
-
-## Milestones as a learning map
-
-| Milestone | Anchor/Solana concepts it forces you to learn |
-|---|---|
-| M1 (done) | PDAs & seeds, account constraints (`has_one`, custom), CPIs to the token program, PDA signing, zero-copy accounts, events, rent/space |
-| M2 (done) | event queues & cranks, `remaining_accounts`, the 10,240-byte CPI-init account cap, compute-budget guards (fill cap), fee accounting. Open stretch: crit-bit slab |
-| M3 (done) | log subscription & event decoding, IDL-driven clients, transaction building on the frontend, priority fees |
-| M4 (done) | oracle accounts & freshness rules, i128 fixed-point margin math, cross-instruction invariants (settle-funding-first), liquidation incentives, keeper/liquidator bots |

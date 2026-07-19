@@ -1,9 +1,10 @@
 # clob-indexer
 
-The M3 off-chain stack: subscribes to the CLOB program's logs, decodes
+The off-chain stack: subscribes to the CLOB program's logs, decodes
 Anchor events, persists everything to Postgres, and serves the trading
-terminal over REST + websocket. Builds and runs natively on Windows
-(no WSL needed — it only talks to the validator over RPC).
+terminal over REST + websocket. A standalone Rust service — it needs
+only an RPC endpoint and a Postgres, and runs anywhere (including
+natively on Windows).
 
 ```
 validator logs ──ws──▶ ingest ──▶ Postgres (trades, orders, candles, transfers)
@@ -16,7 +17,7 @@ validator logs ──ws──▶ ingest ──▶ Postgres (trades, orders, cand
 
 ```bash
 docker compose up -d       # Postgres 16 on localhost:5433
-cp .env.example .env       # defaults target the local WSL validator
+cp .env.example .env       # defaults target a local test validator
 cargo run
 ```
 
@@ -70,5 +71,5 @@ exactly as on-chain. Humanizing them requires the market's `tick_size` /
   this scale.
 
 `cargo test` covers decoding and book reconstruction; the end-to-end
-check is running `npm test` (repo root) against the WSL validator with
+check is running `npm test` (repo root) against a local validator with
 the indexer up, then watching `/markets/:pk/trades` and `/ws` populate.

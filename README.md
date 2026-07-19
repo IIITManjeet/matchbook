@@ -1,139 +1,102 @@
 # Matchbook
 
-A central limit orderbook DEX on Solana — a matching engine and an order
-book in one word. Built as a deep-dive into Anchor and on-chain systems
-design. Spot markets first, perpetual futures later.
+A central limit order book DEX on Solana, built end-to-end: an on-chain
+matching engine and perpetual futures risk engine (Anchor/Rust), an
+off-chain indexer (Rust), keeper bots, and a professional trading
+terminal (Next.js) — from raw program design to a deployed live stack.
 
-**Live demo:** the terminal is published at
-<https://iiitmanjeet.github.io/matchbook/> (static export via GitHub
-Pages). Without a publicly hosted indexer it runs on the built-in
-simulator feed — the full live-data stack (validator + indexer +
-keepers) runs locally per the instructions below. The program is also
-deployed to **devnet** under the same program ID.
+**Live demo:** <https://iiitmanjeet.github.io/matchbook/> — real devnet
+data end to end: the terminal streams the order book, trade tape and
+candles from a hosted indexer tailing the on-chain program.
 
-**Program ID (devnet/localnet):** `9bezj1VAw4gTMKonswkKioRdsttD4UowXh87Fcw9Wtr2`
+**Program ID (devnet):** `9bezj1VAw4gTMKonswkKioRdsttD4UowXh87Fcw9Wtr2`
 
-## Layout
+## Highlights
+
+- **On-chain CLOB** — markets with PDA token vaults, free/locked balance
+  accounting that keeps every resting order fully collateralized by
+  construction, and price-time-priority matching (limit / post-only /
+  IOC) with price improvement and taker fees. Fills flow through an
+  on-chain **event queue** settled by a permissionless `consume_events`
+  crank — the Serum architecture, built from scratch.
+- **Perpetual futures** — oracle-priced SOL-PERP margined in USDC:
+  netted positions with VWAP entry, settle-funding-first invariants,
+  funding accrued from open-interest skew via a permissionless crank,
+  and permissionless liquidations with a split penalty.
+- **Zero-copy order book accounts** (the ~7 KB book is cast in place,
+  never deserialized) and integer-only tick/lot math with checked
+  arithmetic throughout.
+- **Rust indexer** (tokio + Axum) — websocket log ingestion into
+  Postgres with restart-safe backfill, live in-memory book
+  reconstruction from events alone, 1-minute candles, and a REST +
+  websocket API. Speaks raw JSON-RPC — no `solana-sdk` dependency.
+- **Trading terminal** — dense dark-terminal UI with TradingView
+  candles, a depth-visualized ladder, and a ticket that signs real
+  `place_order`/`cancel_order` transactions. Roles (operator / trader /
+  viewer) are derived from on-chain state; perp mode adds positions,
+  margin math and collateral management behind a market switcher.
+- **Keeper bots** — a market seeder and a combined oracle pusher /
+  funding cranker / liquidator that mirrors the on-chain equity math.
+- **Tests at every layer** — Anchor integration suite, indexer unit
+  tests (event decoding, book reconstruction), frontend unit tests, and
+  puppeteer end-to-end flows for both spot and perps.
+
+## Architecture
 
 ```
-programs/clob/    Anchor program (Rust) — markets, vaults, orderbook
-indexer/          Rust service: event ingestion → Postgres → REST + websockets
-app/              Next.js trading terminal (mock feed for now; real data in M3)
+ Next.js terminal ──REST/WS──▶ Rust indexer ──▶ Postgres
+        │                          ▲
+        └────tx signing────▶ Solana RPC ◀──logs┘
+                                   │
+                     Anchor program (source of truth)
+```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the account model
+and the reasoning behind each design decision, and
+[docs/DEPLOY.md](docs/DEPLOY.md) for how the live stack
+(GitHub Pages → Render → Neon → devnet) is wired.
+
+## Repository layout
+
+```
+programs/clob/    Anchor program — markets, vaults, orderbook, perps
+indexer/          Rust service: event ingestion → Postgres → REST + WS
+app/              Next.js trading terminal
+scripts/          Keeper bots: market seeder, oracle/funding/liquidation
 tests/            Anchor integration tests
-docs/             Architecture and design notes
+docs/             Architecture and deployment docs
 ```
 
-## Toolchain
+## Running locally
 
-Anchor has no native Windows support — all program work happens in WSL2
-Ubuntu (`wsl -d Ubuntu`), which has Solana CLI 2.1 + Anchor 0.31.1
-installed. Editing happens on the Windows side; the repo lives at
-`D:\solana` = `/mnt/d/solana` in WSL.
+Prerequisites: Solana CLI + Anchor 0.31 (Linux or WSL), Rust ≥ 1.85,
+Node ≥ 18, Docker.
 
 ```bash
-# inside WSL
-cd /mnt/d/solana
-anchor build          # compile the program + generate the IDL
-solana-test-validator # run a local cluster
-anchor deploy         # deploy to it
+# Linux/WSL — build, run a local cluster, deploy
+anchor build
+solana-test-validator
+anchor deploy
 ```
-
-Integration tests run from the **Windows** side (WSL has no native
-node) against the WSL validator over localhost:
-
-```powershell
-cd D:\solana
-npm test              # tsc + mocha, tests/clob.ts
-```
-
-## Indexer
-
-The M3 indexer (`indexer/`) builds and runs natively on Windows — it
-only talks to the validator over RPC. Rust ≥ 1.85 required.
-
-```powershell
-cd D:\solana\indexer
-docker compose up -d  # Postgres 16 on localhost:5433
-cargo run             # backfill + live tail, API on http://127.0.0.1:8081
-cargo test            # event decoding + book reconstruction unit tests
-```
-
-See [indexer/README.md](indexer/README.md) for the API and design notes.
-
-To generate localnet activity for the indexer and terminal to display:
-
-```powershell
-node scripts/seed-market.mjs 5   # spot: fresh market, resting grid, 5 min of trades
-node scripts/perp-keeper.mjs 10  # perps: oracle pusher + funding crank + liquidator bot
-```
-
-The keeper creates the SOL-PERP market on first run, funds the
-terminal's burner wallet with 10k USDC of margin, then streams oracle
-prices, turns the funding crank and liquidates underwater accounts.
-
-## Trading terminal
-
-The `app/` terminal runs on the Windows side (Node 18.17 → Next.js 14):
 
 ```bash
+npm test                          # Anchor integration suite (repo root)
+
+cd indexer
+docker compose up -d              # Postgres on localhost:5433
+cargo run                         # backfill + live tail → http://127.0.0.1:8081
+cargo test                        # decoding + book reconstruction
+
+node scripts/seed-market.mjs 5    # spot: market, resting grid, 5 min of trades
+node scripts/perp-keeper.mjs 10   # perps: oracle + funding crank + liquidator
+
 cd app
-npm run dev       # http://localhost:3000
-npm test          # vitest unit tests: mock feed + order/balance logic
-npm run test:e2e  # puppeteer smoke test (needs `npm start` running first)
+npm run dev                       # terminal on http://localhost:3000
+npm test                          # unit tests
+npm run test:e2e:sign             # e2e: connect → rest bid → lock → cancel → buy
+npm run test:e2e:perps            # e2e: long SOL-PERP → verify position → close
 ```
 
-On load it probes the indexer and streams real book deltas, trades and
-candles from it (REST bootstrap + websocket), falling back to the
-`app/lib/mock.ts` simulator when the indexer is down. With the indexer
-up, **Connect Wallet** uses a localnet burner keypair
-(`app/lib/dev-wallet.json`, funded by the market seeder) and the ticket
-signs real `place_order` / `cancel_order` transactions: balances come
-from the on-chain `OpenOrders` account, orders and fills from the
-indexer. The signer sits behind a wallet-adapter-shaped interface, so a
-browser-extension wallet is a drop-in for devnet later.
-
-The terminal opens on a login screen: connect the wallet or explore as
-a read-only guest. Roles are derived from on-chain state in one batched
-`getMultipleAccounts` call (`app/lib/roles.ts`) — the perp market's
-admin is the **operator**, a connected wallet is a **trader**, guests
-are **viewers**; the top bar shows the resolved role and operator-only
-surfaces render for the operator wallet alone.
-
-The terminal lists both markets — the spot book and SOL-PERP — behind
-a switcher in the top bar. In perp mode the ticket goes Long/Short with
-margin math, the book panel becomes an oracle/funding readout, and the
-bottom strip shows the live position (entry, mark, uPnL, liquidation
-price, pending funding) plus collateral deposit/withdraw.
-
-```bash
-npm run test:e2e:sign   # e2e: connect → rest bid → verify lock → cancel → market buy
-npm run test:e2e:perps  # e2e: switch to SOL-PERP → long → verify position → close
-```
-
-## Roadmap
-
-- [x] **M1 — Book-keeping core**: markets, PDA vaults, deposits and
-      withdrawals, post-only limit orders, cancels, events.
-- [x] **M2 — Matching**: `place_order` (limit / post-only / IOC) matches
-      takers against the book with price improvement, taker fees accrue
-      to the market, fills flow through an on-chain event queue and the
-      permissionless `consume_events` crank settles maker proceeds.
-      Stretch (open): replace the sorted-array book with a crit-bit slab.
-- [x] **M3 — Off-chain stack**: Rust indexer (log subscription →
-      Postgres, restart-safe backfill, live book reconstruction, 1m
-      candles) with REST + websocket API. Terminal runs on the live
-      indexer feed (simulator fallback) and signs real orders with a
-      localnet burner wallet — placement, cancels, locks and fills all
-      verified end-to-end. Devnet polish left: browser-extension
-      wallets via the adapter interface.
-- [x] **M4 — Perps**: SOL-PERP margined in USDC. Positions fill against
-      a keeper-pushed oracle (Pyth-shaped, freshness-enforced); margin
-      accounts net one position with VWAP entry and settle-funding-first
-      invariants; funding accrues from open-interest skew via a
-      permissionless crank; anyone can liquidate below maintenance for
-      half the penalty. Keeper + liquidator bot in `scripts/`, perp
-      trading UI with positions, collateral management and a market
-      switcher in the terminal. Devnet polish left: real Pyth account +
-      extension wallets.
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
+The terminal probes the indexer on load and falls back to a built-in
+simulator feed when it's unreachable, so the UI is explorable with
+nothing else running.
